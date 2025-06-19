@@ -1,0 +1,40 @@
+backend/
+├── cmd/                    # Main application entry point
+│   └── server/
+│       └── main.go         # Initializes the app (Gin server setup)
+├── config/                 # Configuration files and environment management
+│   └── config.go
+├── internal/               # Internal application logic
+│   ├── chat/               # Chat logic (handlers, service, model, WebSocket)
+│   │   ├── handler.go
+│   │   ├── service.go
+│   │   ├── model.go
+│   │   ├── websocket.go
+│   ├── user/               # User management
+│   │   ├── handler.go
+│   │   ├── service.go
+│   │   ├── model.go
+│   ├── auth/               # JWT auth, token middleware, etc.
+│   │   ├── middleware.go
+│   │   └── utils.go
+│   └── utils/              # Utility functions (validators, helpers, etc.)
+├── db/                     # Database-related code
+│   ├── postgres/           # PostgreSQL-specific queries
+│   │   ├── init.go
+│   │   └── user_repo.go
+│   ├── mongodb/            # MongoDB-specific logic (e.g., storing messages)
+│   │   ├── init.go
+│   │   └── message_repo.go
+│   └── redis/              # Redis init/session/cache
+│       ├── init.go
+│       └── cache.go
+├── middleware/             # Custom Gin middlewares
+│   └── cors.go
+├── routes/                 # HTTP route setup
+│   └── routes.go
+├── websocket/              # WebSocket handling logic
+│   ├── hub.go              # Manages all connections
+│   ├── client.go           # Handles client connections
+│   └── upgrader.go         # Gorilla WebSocket upgrade logic
+├── go.mod
+└── go.sum
