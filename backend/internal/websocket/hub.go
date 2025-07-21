@@ -1,5 +1,13 @@
 package websocket
 
+import (
+	"context"
+	"go-react-chat/kalpesh-vala/github.com/db/redis"
+	"go-react-chat/kalpesh-vala/github.com/models"
+	"go-react-chat/kalpesh-vala/github.com/services"
+	"log"
+)
+
 type Hub struct {
 	Clients    map[*Client]bool
 	Rooms      map[string]map[*Client]bool
@@ -28,6 +36,10 @@ func (h *Hub) Run() {
 			}
 			h.Rooms[client.RoomID][client] = true
 
+			if err := redis.SetUserOnline(client.UserID, client.RoomID); err != nil {
+				log.Println("Failed to set user online in Redis: ", err)
+			}
+
 		case client := <-h.Unregister:
 			if _, ok := h.Clients[client]; ok {
 				delete(h.Clients, client)
@@ -38,6 +50,10 @@ func (h *Hub) Run() {
 				if len(room) == 0 {
 					delete(h.Rooms, client.RoomID)
 				}
+			}
+
+			if err := redis.SetUserOffline(client.UserID, client.RoomID); err != nil {
+				log.Println("Failed to set user offline in Redis: ", err)
 			}
 
 		case msg := <-h.Broadcast:
@@ -54,4 +70,9 @@ func (h *Hub) Run() {
 			}
 		}
 	}
+}
+
+// StoreMessage stores a message in the database
+func (h *Hub) StoreMessage(msg *models.Message) error {
+	return services.InsertMessage(context.Background(), msg)
 }

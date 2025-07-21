@@ -1,6 +1,11 @@
 package websocket
 
 import (
+	"encoding/json"
+	"time"
+
+	"go-react-chat/kalpesh-vala/github.com/models"
+
 	"github.com/gorilla/websocket"
 )
 
@@ -23,11 +28,49 @@ func (c *Client) ReadPump() {
 		if err != nil {
 			break
 		}
-		payload := MessagePayload{
-			RoomID:  c.RoomID,
-			Message: message,
+		var payload MessagePayload
+		if err := json.Unmarshal(message, &payload); err != nil {
+			continue
 		}
-		c.Hub.Broadcast <- payload
+
+		// Store message in database first
+		msg := models.Message{
+			RoomID:         payload.RoomID,
+			SenderID:       payload.SenderID,
+			Message:        payload.Content,
+			Timestamp:      time.Now().Unix(),
+			IsGroup:        payload.IsGroup,
+			Status:         "sent",
+			AttachmentURL:  payload.AttachmentURL,
+			AttachmentType: payload.AttachmentType,
+			Deleted:        false,
+		}
+
+		// Store message in MongoDB
+		if err := c.Hub.StoreMessage(&msg); err != nil {
+			// Send error back to client
+			errorResponse := map[string]interface{}{
+				"type":  "error",
+				"error": "Failed to store message",
+			}
+			if errorBytes, _ := json.Marshal(errorResponse); err == nil {
+				c.Send <- errorBytes
+			}
+			continue
+		}
+
+		// Update payload with stored message ID and broadcast
+		payload.MessageID = msg.ID.Hex()
+		payload.Timestamp = msg.Timestamp
+
+		// Convert payload to JSON for broadcasting
+		if broadcastBytes, err := json.Marshal(payload); err == nil {
+			broadcastPayload := MessagePayload{
+				RoomID:  payload.RoomID,
+				Message: broadcastBytes,
+			}
+			c.Hub.Broadcast <- broadcastPayload
+		}
 	}
 }
 
