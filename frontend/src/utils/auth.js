@@ -37,11 +37,17 @@ export const authUtils = {
     return !!token;
   },
 
-  // Logout utility
+  // Logout utility (with redirect)
   logout: () => {
     Cookies.remove(AUTH_TOKEN_KEY);
     Cookies.remove(USER_DATA_KEY);
     window.location.href = '/login';
+  },
+
+  // Clear auth data without redirect
+  clearAuth: () => {
+    Cookies.remove(AUTH_TOKEN_KEY);
+    Cookies.remove(USER_DATA_KEY);
   },
 
   // Parse JWT token (basic)

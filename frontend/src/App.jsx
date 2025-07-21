@@ -10,6 +10,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import UserProfile from './pages/UserProfile';
+import Chat from './pages/Chat';
 
 // Loading component for auth initialization
 const AuthLoader = ({ children }) => {
@@ -47,15 +48,10 @@ function App() {
         <AuthLoader>
           <div className="App">
             <Routes>
-              {/* Public Routes */}
-              <Route 
-                path="/" 
-                element={
-                  <PublicRoute>
-                    <Home />
-                  </PublicRoute>
-                } 
-              />
+              {/* Public Routes - Home should be accessible to everyone */}
+              <Route path="/" element={<Home />} />
+              
+              {/* Auth Routes - Redirect to dashboard if already authenticated */}
               <Route 
                 path="/login" 
                 element={
@@ -87,6 +83,22 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <UserProfile />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/chat" 
+                element={
+                  <ProtectedRoute>
+                    <Chat />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/chat/:roomId" 
+                element={
+                  <ProtectedRoute>
+                    <Chat />
                   </ProtectedRoute>
                 } 
               />

@@ -8,7 +8,10 @@ const api = axios.create({
   baseURL: BASE_URL,
   headers: {
     'Content-Type': 'application/json',
+    'Accept': 'application/json',
   },
+  withCredentials: false, // Set to true if you need cookies
+  timeout: 10000, // 10 second timeout
 });
 
 // Add request interceptor to include JWT token
@@ -30,10 +33,10 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Token expired or invalid
+      // Token expired or invalid - just clear the auth data
       Cookies.remove('token');
       Cookies.remove('user');
-      window.location.href = '/login';
+      // Don't automatically redirect - let the components handle it
     }
     return Promise.reject(error);
   }
@@ -43,19 +46,29 @@ export class ChatAPI {
   // Authentication endpoints
   static async register(userData) {
     try {
+      console.log('Attempting registration with data:', { ...userData, password: '[HIDDEN]' });
       const response = await api.post('/register', userData);
+      console.log('Registration response:', response.data);
       return { success: true, data: response.data };
     } catch (error) {
+      console.error('Registration error:', error);
+      const errorMessage = error.response?.data?.error || 
+                          error.response?.data?.message || 
+                          error.message || 
+                          'Registration failed';
       return { 
         success: false, 
-        error: error.response?.data?.error || 'Registration failed' 
+        error: errorMessage
       };
     }
   }
 
   static async login(credentials) {
     try {
+      console.log('Attempting login with email:', credentials.email);
       const response = await api.post('/login', credentials);
+      console.log('Login response received:', { success: !!response.data.token });
+      
       if (response.data.token) {
         // Store token in cookie
         Cookies.set('token', response.data.token, { expires: 7 }); // 7 days
@@ -63,9 +76,14 @@ export class ChatAPI {
       }
       return { success: false, error: 'No token received' };
     } catch (error) {
+      console.error('Login error:', error);
+      const errorMessage = error.response?.data?.error || 
+                          error.response?.data?.message || 
+                          error.message || 
+                          'Login failed';
       return { 
         success: false, 
-        error: error.response?.data?.error || 'Login failed' 
+        error: errorMessage
       };
     }
   }

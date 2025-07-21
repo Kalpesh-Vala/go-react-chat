@@ -1,13 +1,22 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { MessageCircle, Users, Settings, LogOut, User } from 'lucide-react';
+import { MessageCircle, Users, Settings, LogOut, User, Menu, X } from 'lucide-react';
 
 const Dashboard = () => {
   const { user, logout } = useAuth();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleLogout = () => {
     logout();
+  };
+
+  const toggleMobileMenu = () => {
+    setIsMobileMenuOpen(!isMobileMenuOpen);
+  };
+
+  const closeMobileMenu = () => {
+    setIsMobileMenuOpen(false);
   };
 
   return (
@@ -16,15 +25,24 @@ const Dashboard = () => {
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
+            {/* Logo and Brand */}
             <div className="flex items-center space-x-3">
               <MessageCircle className="h-8 w-8 text-blue-600" />
               <h1 className="text-xl font-semibold text-gray-900">Chat App</h1>
             </div>
             
-            <div className="flex items-center space-x-4">
+            {/* Desktop Navigation */}
+            <div className="hidden md:flex items-center space-x-4">
               <span className="text-sm text-gray-700">
                 Welcome, {user?.username || user?.email}
               </span>
+              <Link
+                to="/chat"
+                className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+              >
+                <MessageCircle className="h-4 w-4" />
+                <span>Chat</span>
+              </Link>
               <Link
                 to="/profile"
                 className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
@@ -40,13 +58,71 @@ const Dashboard = () => {
                 <span>Logout</span>
               </button>
             </div>
+
+            {/* Mobile Menu Button */}
+            <div className="md:hidden">
+              <button
+                onClick={toggleMobileMenu}
+                className="inline-flex items-center justify-center p-2 rounded-md text-gray-700 hover:text-gray-900 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
+                aria-expanded="false"
+              >
+                <span className="sr-only">Open main menu</span>
+                {isMobileMenuOpen ? (
+                  <X className="block h-6 w-6" aria-hidden="true" />
+                ) : (
+                  <Menu className="block h-6 w-6" aria-hidden="true" />
+                )}
+              </button>
+            </div>
           </div>
+
+          {/* Mobile Menu */}
+          {isMobileMenuOpen && (
+            <div className="md:hidden border-t border-gray-200">
+              <div className="px-2 pt-2 pb-3 space-y-1 bg-white">
+                {/* User Info */}
+                <div className="px-3 py-2 text-sm text-gray-700 border-b border-gray-100">
+                  Welcome, {user?.username || user?.email}
+                </div>
+                
+                {/* Mobile Navigation Links */}
+                <Link
+                  to="/chat"
+                  onClick={closeMobileMenu}
+                  className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+                >
+                  <MessageCircle className="h-4 w-4" />
+                  <span>Chat</span>
+                </Link>
+                
+                <Link
+                  to="/profile"
+                  onClick={closeMobileMenu}
+                  className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+                >
+                  <User className="h-4 w-4" />
+                  <span>Profile</span>
+                </Link>
+                
+                <button
+                  onClick={() => {
+                    handleLogout();
+                    closeMobileMenu();
+                  }}
+                  className="flex items-center space-x-2 w-full px-3 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors text-left"
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span>Logout</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </header>
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {/* Quick Actions */}
           <div className="bg-white rounded-lg shadow p-6">
             <div className="flex items-center space-x-3 mb-4">
@@ -56,9 +132,12 @@ const Dashboard = () => {
             <p className="text-gray-600 mb-4">
               Begin a new conversation or continue an existing one.
             </p>
-            <button className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors">
+            <Link
+              to="/chat"
+              className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors block text-center"
+            >
               Open Chat
-            </button>
+            </Link>
           </div>
 
           {/* Online Users */}
@@ -80,7 +159,7 @@ const Dashboard = () => {
           </div>
 
           {/* Settings */}
-          <div className="bg-white rounded-lg shadow p-6">
+          <div className="bg-white rounded-lg shadow p-6 sm:col-span-2 lg:col-span-1">
             <div className="flex items-center space-x-3 mb-4">
               <Settings className="h-6 w-6 text-gray-600" />
               <h2 className="text-lg font-medium text-gray-900">Settings</h2>

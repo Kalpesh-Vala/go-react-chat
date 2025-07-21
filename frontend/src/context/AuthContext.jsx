@@ -27,8 +27,10 @@ export const AuthProvider = ({ children }) => {
         setUser(userData);
         setIsAuthenticated(true);
       } else {
-        // Clean up invalid/expired data
-        authUtils.logout();
+        // Clean up invalid/expired data without redirecting
+        authUtils.clearAuth();
+        setUser(null);
+        setIsAuthenticated(false);
       }
       
       setIsLoading(false);
