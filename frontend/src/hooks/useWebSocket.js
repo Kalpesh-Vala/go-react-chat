@@ -331,6 +331,7 @@ const useWebSocket = (roomId) => {
 
   const sendMessage = useCallback((messageData) => {
     if (ws.current?.readyState === WebSocket.OPEN) {
+      // Build payload - retain message_id if it exists (from REST API)
       const payload = {
         type: 'message',
         room_id: roomId,
@@ -341,10 +342,22 @@ const useWebSocket = (roomId) => {
         attachment_type: messageData.attachment_type || ''
       };
       
-      console.log('Sending message:', payload);
+      // If the message already has an ID (from REST API), include it
+      if (messageData.message_id) {
+        payload.message_id = messageData.message_id;
+        payload.timestamp = messageData.timestamp || (Date.now() / 1000);
+      }
+      
+      console.log('Sending message via WebSocket:', payload);
       ws.current.send(JSON.stringify(payload));
+      
+      // If we have a message ID, add to processed list to prevent duplication
+      if (messageData.message_id) {
+        setProcessedMessageIds(prev => new Set(prev).add(messageData.message_id));
+      }
     } else {
       console.error('WebSocket is not connected');
+      throw new Error('WebSocket is not connected');
     }
   }, [roomId, user?.id]);
 

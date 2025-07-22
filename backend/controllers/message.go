@@ -50,9 +50,10 @@ func SendMessage(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "sender_id is required and must be greater than 0"})
 		return
 	}
-	if msg.Message == "" {
-		println("ERROR: Message is empty")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "message content is required"})
+	// Allow empty message if there's an attachment
+	if msg.Message == "" && msg.AttachmentURL == "" {
+		println("ERROR: Both message and attachment are empty")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "either message content or attachment is required"})
 		return
 	}
 

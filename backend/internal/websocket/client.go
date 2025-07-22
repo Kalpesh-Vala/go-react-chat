@@ -33,7 +33,24 @@ func (c *Client) ReadPump() {
 			continue
 		}
 
-		// Store message in database first
+		// Check if message has an ID already (might be a forwarded message from REST API)
+		if payload.MessageID != "" {
+			// This message already has an ID, so it's already been saved to the database
+			// Just broadcast it without saving again
+			println("Received message with existing ID:", payload.MessageID, "- skipping database save")
+			
+			// Just broadcast the existing message
+			if broadcastBytes, err := json.Marshal(payload); err == nil {
+				broadcastPayload := MessagePayload{
+					RoomID:  payload.RoomID,
+					Message: broadcastBytes,
+				}
+				c.Hub.Broadcast <- broadcastPayload
+			}
+			continue
+		}
+		
+		// This is a new message without an ID, so store it in database
 		msg := models.Message{
 			RoomID:         payload.RoomID,
 			SenderID:       payload.SenderID,
@@ -44,6 +61,18 @@ func (c *Client) ReadPump() {
 			AttachmentURL:  payload.AttachmentURL,
 			AttachmentType: payload.AttachmentType,
 			Deleted:        false,
+		}
+
+		// Skip empty messages
+		if msg.Message == "" && msg.AttachmentURL == "" {
+			errorResponse := map[string]interface{}{
+				"type":  "error",
+				"error": "Empty message",
+			}
+			if errorBytes, _ := json.Marshal(errorResponse); err == nil {
+				c.Send <- errorBytes
+			}
+			continue
 		}
 
 		// Store message in MongoDB

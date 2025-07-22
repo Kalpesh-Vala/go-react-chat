@@ -213,32 +213,71 @@ const ChatContainer = ({ selectedRoom, onBackToList }) => {
 
   const handleSendMessage = useCallback(async (content, attachmentUrl = '', attachmentType = '') => {
     if (!content.trim() && !attachmentUrl) return;
-
-    const messageData = {
-      content: content.trim(),
-      is_group: false,
-      attachment_url: attachmentUrl,
-      attachment_type: attachmentType
-    };
-
+    
+    const trimmedContent = content.trim();
+    // Generate a temporary client-side ID for deduplication
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    
     try {
-      // Send via WebSocket for real-time delivery
+      // Send via WebSocket for real-time delivery if connected
       if (isConnected) {
-        sendMessage(messageData);
+        console.log('Sending message via WebSocket');
+        sendMessage({
+          content: trimmedContent,
+          is_group: false,
+          attachment_url: attachmentUrl,
+          attachment_type: attachmentType
+        });
       } else {
         // Fallback to REST API if WebSocket is not connected
-        await ChatAPI.sendMessage({
+        console.log('WebSocket not connected, using REST API fallback');
+        const response = await ChatAPI.sendMessage({
           room_id: selectedRoom,
           sender_id: user?.id,
-          message: content.trim(),
+          message: trimmedContent,
           is_group: false,
           status: 'sent',
           attachment_url: attachmentUrl,
           attachment_type: attachmentType
         });
+        
+        // If we got a message ID back from API, send it to WebSocket for broadcasting
+        // This helps prevent duplicate storage
+        if (response?.data?.message_id && isConnected) {
+          console.log('Got message ID from API, notifying WebSocket', response.data.message_id);
+          sendMessage({
+            type: "message",
+            message_id: response.data.message_id,
+            room_id: selectedRoom,
+            sender_id: user?.id,
+            content: trimmedContent,
+            timestamp: response.data.timestamp || Date.now()/1000,
+            is_group: false,
+            attachment_url: attachmentUrl,
+            attachment_type: attachmentType
+          });
+        }
       }
     } catch (error) {
       console.error('Error sending message:', error);
+      
+      // If WebSocket failed and we haven't tried REST API yet, try REST as last resort
+      if (isConnected && error) {
+        try {
+          console.log('WebSocket failed, falling back to REST API');
+          await ChatAPI.sendMessage({
+            room_id: selectedRoom,
+            sender_id: user?.id,
+            message: trimmedContent,
+            is_group: false,
+            status: 'sent',
+            attachment_url: attachmentUrl,
+            attachment_type: attachmentType
+          });
+        } catch (backupError) {
+          console.error('Both WebSocket and REST API failed:', backupError);
+        }
+      }
     }
   }, [selectedRoom, user?.id, isConnected, sendMessage]);
 
