@@ -1,11 +1,45 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { MessageCircle, Users, Settings, LogOut, User, Menu, X } from 'lucide-react';
+import { MessageCircle, Users, Settings, LogOut, User, Menu, X, Plus, Search } from 'lucide-react';
+import { ChatAPI } from '../services/api';
 
 const Dashboard = () => {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [recentChats, setRecentChats] = useState([]);
+  const [onlineUsers, setOnlineUsers] = useState([]);
+
+  // Load dashboard data
+  useEffect(() => {
+    const loadDashboardData = async () => {
+      try {
+        // Load online users
+        const onlineResult = await ChatAPI.getOnlineUsers();
+        if (onlineResult.success) {
+          setOnlineUsers(onlineResult.data.online_users || []);
+        }
+
+        // Load recent chats (mock data for now)
+        setRecentChats([
+          {
+            id: 'ai-agent',
+            username: 'AI Agent',
+            avatar: '🤖',
+            lastMessage: 'Hello! I\'m here to help you with anything.',
+            lastMessageTime: Date.now() / 1000,
+            unreadCount: 0,
+            isOnline: true
+          }
+        ]);
+      } catch (error) {
+        console.error('Error loading dashboard data:', error);
+      }
+    };
+
+    loadDashboardData();
+  }, []);
 
   const handleLogout = () => {
     logout();
@@ -17,6 +51,25 @@ const Dashboard = () => {
 
   const closeMobileMenu = () => {
     setIsMobileMenuOpen(false);
+  };
+
+  const startChatWithAI = () => {
+    navigate('/chat/ai-agent');
+  };
+
+  const goToChat = () => {
+    navigate('/chat');
+  };
+
+  const formatLastMessageTime = (timestamp) => {
+    const date = new Date(timestamp * 1000);
+    const now = new Date();
+    const diff = now - date;
+    
+    if (diff < 60000) return 'now';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+    return date.toLocaleDateString();
   };
 
   return (
@@ -122,70 +175,168 @@ const Dashboard = () => {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {/* Quick Actions */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center space-x-3 mb-4">
-              <MessageCircle className="h-6 w-6 text-blue-600" />
-              <h2 className="text-lg font-medium text-gray-900">Start Chatting</h2>
-            </div>
-            <p className="text-gray-600 mb-4">
-              Begin a new conversation or continue an existing one.
-            </p>
-            <Link
-              to="/chat"
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors block text-center"
-            >
-              Open Chat
-            </Link>
-          </div>
-
-          {/* Online Users */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center space-x-3 mb-4">
-              <Users className="h-6 w-6 text-green-600" />
-              <h2 className="text-lg font-medium text-gray-900">Online Users</h2>
-            </div>
-            <p className="text-gray-600 mb-4">
-              See who's currently online and available to chat.
-            </p>
-            <div className="space-y-2">
-              <div className="flex items-center space-x-2">
-                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span className="text-sm text-gray-700">You</span>
-              </div>
-              <p className="text-sm text-gray-500">Loading other users...</p>
-            </div>
-          </div>
-
-          {/* Settings */}
-          <div className="bg-white rounded-lg shadow p-6 sm:col-span-2 lg:col-span-1">
-            <div className="flex items-center space-x-3 mb-4">
-              <Settings className="h-6 w-6 text-gray-600" />
-              <h2 className="text-lg font-medium text-gray-900">Settings</h2>
-            </div>
-            <p className="text-gray-600 mb-4">
-              Customize your chat experience and preferences.
-            </p>
-            <Link
-              to="/profile"
-              className="w-full bg-gray-600 text-white py-2 px-4 rounded-md hover:bg-gray-700 transition-colors block text-center"
-            >
-              Open Settings
-            </Link>
-          </div>
+        {/* Welcome Section */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            Welcome back, {user?.username || 'User'}! 👋
+          </h1>
+          <p className="text-gray-600">
+            Start chatting with the AI Agent or search for other users to connect with.
+          </p>
         </div>
 
-        {/* Recent Activity */}
-        <div className="mt-8">
-          <div className="bg-white rounded-lg shadow">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-medium text-gray-900">Recent Activity</h3>
-            </div>
-            <div className="p-6">
-              <p className="text-gray-500 text-center py-8">
-                No recent activity. Start a conversation to see your chat history here.
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Quick Start */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* AI Agent Card */}
+            <div className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg shadow-lg p-6 text-white">
+              <div className="flex items-center space-x-4 mb-4">
+                <div className="w-16 h-16 bg-white bg-opacity-20 rounded-full flex items-center justify-center text-2xl">
+                  🤖
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold">AI Agent</h2>
+                  <p className="text-blue-100">Your intelligent chat companion</p>
+                </div>
+              </div>
+              <p className="text-blue-100 mb-6">
+                Get instant help, ask questions, or just have a conversation with our AI-powered chatbot.
               </p>
+              <button
+                onClick={startChatWithAI}
+                className="bg-white text-blue-600 px-6 py-3 rounded-lg font-semibold hover:bg-blue-50 transition-colors flex items-center space-x-2"
+              >
+                <MessageCircle className="w-5 h-5" />
+                <span>Start Chat with AI</span>
+              </button>
+            </div>
+
+            {/* Recent Chats */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-semibold text-gray-900">Recent Conversations</h2>
+                <button
+                  onClick={goToChat}
+                  className="text-blue-600 hover:text-blue-700 font-medium text-sm flex items-center space-x-1"
+                >
+                  <span>View All</span>
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+              
+              {recentChats.length > 0 ? (
+                <div className="space-y-3">
+                  {recentChats.map((chat) => (
+                    <div
+                      key={chat.id}
+                      onClick={() => navigate(`/chat/${chat.id}`)}
+                      className="flex items-center space-x-3 p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors"
+                    >
+                      <div className="relative">
+                        <div className="w-12 h-12 bg-gradient-to-r from-blue-400 to-purple-500 rounded-full flex items-center justify-center text-white font-semibold text-lg">
+                          {chat.avatar}
+                        </div>
+                        {chat.isOnline && (
+                          <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900">{chat.username}</p>
+                        <p className="text-sm text-gray-500 truncate">{chat.lastMessage}</p>
+                      </div>
+                      <div className="flex flex-col items-end">
+                        <span className="text-xs text-gray-400">
+                          {formatLastMessageTime(chat.lastMessageTime)}
+                        </span>
+                        {chat.unreadCount > 0 && (
+                          <div className="bg-blue-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center mt-1">
+                            {chat.unreadCount}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <MessageCircle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-500 mb-4">No recent conversations</p>
+                  <button
+                    onClick={goToChat}
+                    className="text-blue-600 hover:text-blue-700 font-medium flex items-center space-x-1 mx-auto"
+                  >
+                    <Search className="w-4 h-4" />
+                    <span>Find people to chat with</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Sidebar */}
+          <div className="space-y-6">
+            {/* Online Users */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <Users className="h-6 w-6 text-green-600" />
+                <h2 className="text-lg font-medium text-gray-900">Online Now</h2>
+              </div>
+              <div className="space-y-3">
+                {/* AI Agent always online */}
+                <div className="flex items-center space-x-3">
+                  <div className="relative">
+                    <div className="w-8 h-8 bg-gradient-to-r from-blue-400 to-purple-500 rounded-full flex items-center justify-center text-sm">
+                      🤖
+                    </div>
+                    <div className="absolute -bottom-1 -right-1 w-2.5 h-2.5 bg-green-500 rounded-full border border-white"></div>
+                  </div>
+                  <span className="text-sm text-gray-700">AI Agent</span>
+                </div>
+                
+                {onlineUsers.slice(0, 4).map((user, index) => (
+                  <div key={index} className="flex items-center space-x-3">
+                    <div className="relative">
+                      <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-xs font-medium text-gray-700">
+                        {user.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="absolute -bottom-1 -right-1 w-2.5 h-2.5 bg-green-500 rounded-full border border-white"></div>
+                    </div>
+                    <span className="text-sm text-gray-700">{user}</span>
+                  </div>
+                ))}
+                
+                {onlineUsers.length === 0 && (
+                  <p className="text-sm text-gray-500">No other users online</p>
+                )}
+              </div>
+            </div>
+
+            {/* Quick Actions */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-lg font-medium text-gray-900 mb-4">Quick Actions</h2>
+              <div className="space-y-3">
+                <button
+                  onClick={goToChat}
+                  className="w-full flex items-center space-x-3 p-3 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                >
+                  <Search className="h-5 w-5 text-gray-600" />
+                  <span className="text-sm text-gray-700">Find People</span>
+                </button>
+                <Link
+                  to="/profile"
+                  className="w-full flex items-center space-x-3 p-3 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                >
+                  <User className="h-5 w-5 text-gray-600" />
+                  <span className="text-sm text-gray-700">Edit Profile</span>
+                </Link>
+                <button
+                  onClick={() => {}}
+                  className="w-full flex items-center space-x-3 p-3 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                >
+                  <Settings className="h-5 w-5 text-gray-600" />
+                  <span className="text-sm text-gray-700">Settings</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

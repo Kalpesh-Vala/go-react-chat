@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 
-const useWebSocket = (roomId, token = null) => {
+const useWebSocket = (roomId) => {
   const { user } = useAuth();
   const [messages, setMessages] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
@@ -15,16 +15,13 @@ const useWebSocket = (roomId, token = null) => {
   const reconnectTimeout = useRef(null);
   const isTyping = useRef(false);
 
-  // Get token from user context or parameter
-  const authToken = token || user?.token;
-
-  // Connection configuration
+  // Configuration
   const maxReconnectAttempts = 5;
   const reconnectDelay = 1000; // Start with 1 second
   const typingDelay = 3000; // Stop typing after 3 seconds
 
   const connect = useCallback(() => {
-    if (!roomId || !authToken) {
+    if (!roomId || !user?.token) {
       console.log('Missing roomId or token for WebSocket connection');
       return;
     }
@@ -35,13 +32,13 @@ const useWebSocket = (roomId, token = null) => {
         ws.current.close();
       }
 
-      const wsUrl = `ws://localhost:8080/ws?room=${roomId}&token=${authToken}`;
+      const wsUrl = `ws://localhost:8080/ws?room=${roomId}&token=${user.token}`;
       console.log('Connecting to WebSocket:', wsUrl);
       
       ws.current = new WebSocket(wsUrl);
 
       ws.current.onopen = () => {
-        console.log('WebSocket connected');
+        console.log('WebSocket connected to room:', roomId);
         setIsConnected(true);
         setConnectionError(null);
         setReconnectAttempts(0);
@@ -101,58 +98,47 @@ const useWebSocket = (roomId, token = null) => {
                   }
                   return newSet;
                 });
-
-                // Auto-remove typing indicator after delay
-                if (data.is_typing) {
-                  setTimeout(() => {
-                    setTypingUsers(prev => {
-                      const newSet = new Set(prev);
-                      const filtered = Array.from(newSet).filter(u => u.user_id !== data.user_id);
-                      return new Set(filtered);
-                    });
-                  }, 5000);
-                }
               }
               break;
 
             case 'reaction':
-              setMessages(prev => prev.map(msg => {
-                if (msg.id === data.message_id || msg.message_id === data.message_id) {
-                  const reactions = { ...msg.reactions };
-                  const emoji = data.emoji;
-                  const userId = data.user_id.toString();
-
-                  if (data.action === 'add') {
-                    if (!reactions[emoji]) {
-                      reactions[emoji] = [];
-                    }
-                    if (!reactions[emoji].includes(userId)) {
-                      reactions[emoji].push(userId);
-                    }
-                  } else if (data.action === 'remove') {
-                    if (reactions[emoji]) {
-                      reactions[emoji] = reactions[emoji].filter(id => id !== userId);
-                      if (reactions[emoji].length === 0) {
-                        delete reactions[emoji];
+              setMessages(prev => 
+                prev.map(msg => {
+                  if (msg.id === data.message_id || msg.message_id === data.message_id) {
+                    const reactions = { ...msg.reactions };
+                    
+                    if (data.action === 'add') {
+                      if (!reactions[data.emoji]) {
+                        reactions[data.emoji] = [];
+                      }
+                      if (!reactions[data.emoji].includes(data.user_id.toString())) {
+                        reactions[data.emoji].push(data.user_id.toString());
+                      }
+                    } else if (data.action === 'remove') {
+                      if (reactions[data.emoji]) {
+                        reactions[data.emoji] = reactions[data.emoji].filter(
+                          uid => uid !== data.user_id.toString()
+                        );
+                        if (reactions[data.emoji].length === 0) {
+                          delete reactions[data.emoji];
+                        }
                       }
                     }
+                    
+                    return { ...msg, reactions };
                   }
-
-                  return { ...msg, reactions };
-                }
-                return msg;
-              }));
-              break;
-
-            case 'user_joined':
-            case 'user_left':
-              // Handle user presence updates
-              console.log(`User ${data.type}:`, data);
+                  return msg;
+                })
+              );
               break;
 
             case 'error':
               console.error('WebSocket error:', data.error);
               setConnectionError(data.error);
+              break;
+
+            case 'pong':
+              // Response to ping - connection is alive
               break;
 
             default:
@@ -161,6 +147,12 @@ const useWebSocket = (roomId, token = null) => {
         } catch (error) {
           console.error('Error parsing WebSocket message:', error);
         }
+      };
+
+      ws.current.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        setConnectionError('Connection error occurred');
+        setIsConnected(false);
       };
 
       ws.current.onclose = (event) => {
@@ -173,174 +165,127 @@ const useWebSocket = (roomId, token = null) => {
           pingInterval.current = null;
         }
 
-        // Attempt to reconnect if not manually closed
+        // Attempt to reconnect if not intentionally closed
         if (event.code !== 1000 && reconnectAttempts < maxReconnectAttempts) {
           const delay = reconnectDelay * Math.pow(2, reconnectAttempts); // Exponential backoff
-          console.log(`Attempting to reconnect in ${delay}ms...`);
+          console.log(`Attempting to reconnect in ${delay}ms (attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`);
           
           reconnectTimeout.current = setTimeout(() => {
             setReconnectAttempts(prev => prev + 1);
             connect();
           }, delay);
         } else if (reconnectAttempts >= maxReconnectAttempts) {
-          setConnectionError('Unable to connect to chat server. Please refresh the page.');
+          setConnectionError('Failed to reconnect after multiple attempts');
         }
-      };
-
-      ws.current.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        setConnectionError('Connection error occurred');
       };
 
     } catch (error) {
       console.error('Error creating WebSocket connection:', error);
-      setConnectionError('Failed to establish connection');
+      setConnectionError('Failed to create connection');
     }
-  }, [roomId, authToken, user?.id, reconnectAttempts]);
+  }, [roomId, user?.token, reconnectAttempts]);
 
-  // Initialize connection
+  // Connect when component mounts or roomId/token changes
   useEffect(() => {
-    connect();
+    if (roomId && user?.token) {
+      connect();
+    }
 
     return () => {
+      // Cleanup on unmount or dependency change
       if (ws.current) {
         ws.current.close(1000, 'Component unmounting');
       }
       if (pingInterval.current) {
         clearInterval(pingInterval.current);
       }
-      if (typingTimeout.current) {
-        clearTimeout(typingTimeout.current);
-      }
       if (reconnectTimeout.current) {
         clearTimeout(reconnectTimeout.current);
+      }
+      if (typingTimeout.current) {
+        clearTimeout(typingTimeout.current);
       }
     };
   }, [connect]);
 
-  // Clear messages when room changes
+  // Reset messages when room changes
   useEffect(() => {
     setMessages([]);
     setTypingUsers(new Set());
   }, [roomId]);
 
-  const sendMessage = useCallback((content, attachmentUrl = '', attachmentType = '') => {
-    if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
+  const sendMessage = useCallback((messageData) => {
+    if (ws.current?.readyState === WebSocket.OPEN) {
+      const payload = {
+        type: 'message',
+        room_id: roomId,
+        sender_id: user?.id,
+        content: messageData.content,
+        is_group: messageData.is_group || false,
+        attachment_url: messageData.attachment_url || '',
+        attachment_type: messageData.attachment_type || ''
+      };
+      
+      console.log('Sending message:', payload);
+      ws.current.send(JSON.stringify(payload));
+    } else {
       console.error('WebSocket is not connected');
-      return false;
-    }
-
-    if (!content.trim()) {
-      console.error('Message content is empty');
-      return false;
-    }
-
-    const messagePayload = {
-      type: 'message',
-      room_id: roomId,
-      sender_id: user?.id,
-      content: content.trim(),
-      is_group: true, // Most rooms are group chats
-      attachment_url: attachmentUrl,
-      attachment_type: attachmentType,
-      timestamp: Math.floor(Date.now() / 1000)
-    };
-
-    try {
-      ws.current.send(JSON.stringify(messagePayload));
-      console.log('Message sent:', messagePayload);
-      return true;
-    } catch (error) {
-      console.error('Error sending message:', error);
-      return false;
     }
   }, [roomId, user?.id]);
 
-  const sendReaction = useCallback((messageId, emoji, action = 'add') => {
-    if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
-      console.error('WebSocket is not connected');
-      return false;
-    }
-
-    const reactionPayload = {
-      type: 'reaction',
-      message_id: messageId,
-      room_id: roomId,
-      user_id: user?.id,
-      emoji: emoji,
-      action: action // 'add' or 'remove'
-    };
-
-    try {
-      ws.current.send(JSON.stringify(reactionPayload));
-      console.log('Reaction sent:', reactionPayload);
-      return true;
-    } catch (error) {
-      console.error('Error sending reaction:', error);
-      return false;
+  const sendReaction = useCallback((reactionData) => {
+    if (ws.current?.readyState === WebSocket.OPEN) {
+      const payload = {
+        type: 'reaction',
+        message_id: reactionData.message_id,
+        room_id: roomId,
+        user_id: user?.id,
+        emoji: reactionData.emoji,
+        action: reactionData.action || 'add'
+      };
+      
+      console.log('Sending reaction:', payload);
+      ws.current.send(JSON.stringify(payload));
     }
   }, [roomId, user?.id]);
 
   const startTyping = useCallback(() => {
-    if (!ws.current || ws.current.readyState !== WebSocket.OPEN || isTyping.current) {
-      return;
+    if (ws.current?.readyState === WebSocket.OPEN && !isTyping.current) {
+      isTyping.current = true;
+      
+      const payload = {
+        type: 'typing',
+        room_id: roomId,
+        user_id: user?.id,
+        username: user?.username || 'User',
+        is_typing: true
+      };
+      
+      ws.current.send(JSON.stringify(payload));
     }
-
-    isTyping.current = true;
-    
-    const typingPayload = {
-      type: 'typing',
-      room_id: roomId,
-      user_id: user?.id,
-      username: user?.username || user?.email,
-      is_typing: true
-    };
-
-    try {
-      ws.current.send(JSON.stringify(typingPayload));
-      console.log('Started typing');
-    } catch (error) {
-      console.error('Error sending typing indicator:', error);
-    }
-  }, [roomId, user?.id, user?.username, user?.email]);
+  }, [roomId, user?.id, user?.username]);
 
   const stopTyping = useCallback(() => {
-    if (!ws.current || ws.current.readyState !== WebSocket.OPEN || !isTyping.current) {
-      return;
+    if (ws.current?.readyState === WebSocket.OPEN && isTyping.current) {
+      isTyping.current = false;
+      
+      const payload = {
+        type: 'typing',
+        room_id: roomId,
+        user_id: user?.id,
+        username: user?.username || 'User',
+        is_typing: false
+      };
+      
+      ws.current.send(JSON.stringify(payload));
     }
 
-    isTyping.current = false;
-
-    const typingPayload = {
-      type: 'typing',
-      room_id: roomId,
-      user_id: user?.id,
-      username: user?.username || user?.email,
-      is_typing: false
-    };
-
-    try {
-      ws.current.send(JSON.stringify(typingPayload));
-      console.log('Stopped typing');
-    } catch (error) {
-      console.error('Error sending typing indicator:', error);
-    }
-  }, [roomId, user?.id, user?.username, user?.email]);
-
-  // Auto-stop typing after delay
-  const handleTyping = useCallback(() => {
-    startTyping();
-    
-    // Clear existing timeout
+    // Clear any existing typing timeout
     if (typingTimeout.current) {
       clearTimeout(typingTimeout.current);
+      typingTimeout.current = null;
     }
-    
-    // Set new timeout
-    typingTimeout.current = setTimeout(() => {
-      stopTyping();
-    }, typingDelay);
-  }, [startTyping, stopTyping]);
+  }, [roomId, user?.id, user?.username]);
 
   return {
     messages,
@@ -349,7 +294,7 @@ const useWebSocket = (roomId, token = null) => {
     typingUsers,
     sendMessage,
     sendReaction,
-    startTyping: handleTyping,
+    startTyping,
     stopTyping,
     reconnect: connect
   };

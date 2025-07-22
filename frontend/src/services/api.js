@@ -182,6 +182,48 @@ export class ChatAPI {
     }
   }
 
+  // User search and management
+  static async searchUsers(query) {
+    try {
+      // TODO: Replace with actual API endpoint when implemented
+      // const response = await api.get(`/users/search?q=${encodeURIComponent(query)}`);
+      
+      // Mock implementation for now
+      const mockUsers = [
+        { id: 'user1', username: 'john_doe', email: 'john@example.com', avatar: '👤', isOnline: true },
+        { id: 'user2', username: 'jane_smith', email: 'jane@example.com', avatar: '👤', isOnline: false },
+        { id: 'user3', username: 'mike_wilson', email: 'mike@example.com', avatar: '👤', isOnline: true },
+        { id: 'user4', username: 'sarah_jones', email: 'sarah@example.com', avatar: '👤', isOnline: false },
+        { id: 'user5', username: 'david_brown', email: 'david@example.com', avatar: '👤', isOnline: true },
+      ];
+
+      const filtered = mockUsers.filter(user => 
+        user.username.toLowerCase().includes(query.toLowerCase()) ||
+        user.email.toLowerCase().includes(query.toLowerCase())
+      );
+
+      return { success: true, data: { users: filtered } };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error.response?.data?.error || 'Failed to search users' 
+      };
+    }
+  }
+
+  static async getUserProfile(userId) {
+    try {
+      // TODO: Replace with actual API endpoint
+      const response = await api.get(`/users/${userId}`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error.response?.data?.error || 'Failed to get user profile' 
+      };
+    }
+  }
+
   // Health check
   static async ping() {
     try {

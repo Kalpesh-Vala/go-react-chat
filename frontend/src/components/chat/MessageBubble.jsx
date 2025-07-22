@@ -1,255 +1,192 @@
-import React, { useState } from 'react';
-import { formatDistanceToNow } from 'date-fns';
-import { MoreHorizontal, Reply, Copy, Trash2 } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { MoreVertical, Reply, Copy, Trash2 } from 'lucide-react';
 
-const MessageBubble = ({ message, currentUserId, onReaction }) => {
-  const [showReactions, setShowReactions] = useState(false);
-  const [showMenu, setShowMenu] = useState(false);
-  
-  const isOwn = message.sender_id === currentUserId;
-  const timestamp = message.timestamp ? new Date(message.timestamp * 1000) : new Date();
-  
-  // Common reaction emojis
-  const quickReactions = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
-  
-  const handleReactionClick = (emoji) => {
-    const reactions = message.reactions || {};
-    const userReacted = reactions[emoji]?.includes(currentUserId?.toString());
-    
-    if (userReacted) {
-      onReaction(message.id || message.message_id, emoji, 'remove');
-    } else {
-      onReaction(message.id || message.message_id, emoji, 'add');
-    }
-    setShowReactions(false);
+const MessageBubble = ({ message, isOwn, onReaction, onReply, onDelete }) => {
+  const [showOptions, setShowOptions] = useState(false);
+  const optionsRef = useRef(null);
+
+  // Close options when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (optionsRef.current && !optionsRef.current.contains(event.target)) {
+        setShowOptions(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const formatTime = (timestamp) => {
+    const date = new Date(timestamp * 1000);
+    return date.toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: true 
+    });
+  };
+
+  const handleReaction = (emoji, action = 'add') => {
+    onReaction?.(message.id, emoji, action);
+    setShowOptions(false);
   };
 
   const copyMessage = () => {
     navigator.clipboard.writeText(message.content || message.message);
-    setShowMenu(false);
+    setShowOptions(false);
   };
 
-  const replyToMessage = () => {
-    // TODO: Implement reply functionality
-    console.log('Reply to message:', message.id || message.message_id);
-    setShowMenu(false);
-  };
-
-  const deleteMessage = () => {
-    // TODO: Implement delete functionality
-    console.log('Delete message:', message.id || message.message_id);
-    setShowMenu(false);
-  };
+  const reactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '😡'];
 
   return (
-    <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'} mb-4`}>
-      <div className={`max-w-xs lg:max-w-md xl:max-w-lg ${isOwn ? 'order-2' : 'order-1'}`}>
-        {/* Avatar for others' messages */}
-        {!isOwn && (
-          <div className="flex items-end space-x-2">
-            <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center flex-shrink-0">
-              <span className="text-xs font-medium text-gray-700">
-                {message.sender_id?.toString().slice(-1) || 'U'}
-              </span>
+    <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'} mb-2 group relative`}>
+      <div className={`relative max-w-xs sm:max-w-sm lg:max-w-md ${isOwn ? 'order-2' : 'order-1'}`}>
+        {/* Message bubble */}
+        <div
+          className={`px-3 py-2 rounded-2xl relative ${
+            isOwn
+              ? 'bg-blue-600 text-white rounded-br-md'
+              : 'bg-white text-gray-900 border border-gray-200 rounded-bl-md'
+          } shadow-sm`}
+        >
+          {/* Message content */}
+          <p className="text-sm whitespace-pre-wrap break-words">
+            {message.content || message.message}
+          </p>
+
+          {/* Attachment */}
+          {message.attachment_url && (
+            <div className="mt-2">
+              {message.attachment_type?.startsWith('image') ? (
+                <img 
+                  src={message.attachment_url} 
+                  alt="Attachment" 
+                  className="max-w-full h-auto rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                  onClick={() => {
+                    // Open image in full screen - implement modal later
+                    window.open(message.attachment_url, '_blank');
+                  }}
+                />
+              ) : (
+                <a 
+                  href={message.attachment_url} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className={`inline-flex items-center space-x-1 underline hover:no-underline transition-colors ${
+                    isOwn ? 'text-blue-100 hover:text-blue-200' : 'text-blue-600 hover:text-blue-800'
+                  }`}
+                >
+                  <span>📎</span>
+                  <span>{message.attachment_type || 'Attachment'}</span>
+                </a>
+              )}
             </div>
-            <div className="flex-1">
-              <MessageContent 
-                message={message}
-                isOwn={isOwn}
-                timestamp={timestamp}
-                showReactions={showReactions}
-                setShowReactions={setShowReactions}
-                showMenu={showMenu}
-                setShowMenu={setShowMenu}
-                quickReactions={quickReactions}
-                handleReactionClick={handleReactionClick}
-                copyMessage={copyMessage}
-                replyToMessage={replyToMessage}
-                deleteMessage={deleteMessage}
-                currentUserId={currentUserId}
-              />
-            </div>
-          </div>
-        )}
+          )}
 
-        {/* Own messages */}
-        {isOwn && (
-          <MessageContent 
-            message={message}
-            isOwn={isOwn}
-            timestamp={timestamp}
-            showReactions={showReactions}
-            setShowReactions={setShowReactions}
-            showMenu={showMenu}
-            setShowMenu={setShowMenu}
-            quickReactions={quickReactions}
-            handleReactionClick={handleReactionClick}
-            copyMessage={copyMessage}
-            replyToMessage={replyToMessage}
-            deleteMessage={deleteMessage}
-            currentUserId={currentUserId}
-          />
-        )}
-      </div>
-    </div>
-  );
-};
-
-const MessageContent = ({
-  message,
-  isOwn,
-  timestamp,
-  showReactions,
-  setShowReactions,
-  showMenu,
-  setShowMenu,
-  quickReactions,
-  handleReactionClick,
-  copyMessage,
-  replyToMessage,
-  deleteMessage,
-  currentUserId
-}) => {
-  return (
-    <div className="relative group">
-      {/* Message bubble */}
-      <div
-        className={`relative px-4 py-2 rounded-2xl shadow-sm ${
-          isOwn
-            ? 'bg-blue-500 text-white'
-            : 'bg-white text-gray-900 border border-gray-200'
-        }`}
-      >
-        {/* Message content */}
-        <div className="break-words">
-          {message.content || message.message}
-        </div>
-
-        {/* Attachment */}
-        {message.attachment_url && (
-          <div className="mt-2">
-            {message.attachment_type?.startsWith('image') ? (
-              <img
-                src={message.attachment_url}
-                alt="Attachment"
-                className="max-w-full h-auto rounded-lg"
-              />
-            ) : (
-              <a
-                href={message.attachment_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`text-sm underline ${
-                  isOwn ? 'text-blue-100' : 'text-blue-600'
-                }`}
-              >
-                View Attachment
-              </a>
+          {/* Timestamp and status */}
+          <div className={`text-xs mt-1 flex items-center space-x-1 ${
+            isOwn ? 'text-blue-100' : 'text-gray-500'
+          }`}>
+            <span>{formatTime(message.timestamp)}</span>
+            {isOwn && message.status && (
+              <>
+                <span>•</span>
+                <span className="capitalize">{message.status}</span>
+              </>
             )}
           </div>
-        )}
+        </div>
 
-        {/* Reactions display */}
+        {/* Reactions */}
         {message.reactions && Object.keys(message.reactions).length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-2">
+          <div className="flex flex-wrap gap-1 mt-1 px-1">
             {Object.entries(message.reactions).map(([emoji, users]) => (
               <button
                 key={emoji}
-                onClick={() => handleReactionClick(emoji)}
-                className={`inline-flex items-center space-x-1 px-2 py-1 rounded-full text-xs transition-colors ${
-                  users.includes(currentUserId?.toString())
-                    ? 'bg-blue-100 text-blue-800 border border-blue-200'
-                    : isOwn
-                    ? 'bg-blue-400 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                onClick={() => {
+                  // Toggle reaction - if user already reacted, remove it, otherwise add it
+                  const currentUserId = 'current-user'; // Get from context
+                  const hasReacted = users.includes(currentUserId);
+                  handleReaction(emoji, hasReacted ? 'remove' : 'add');
+                }}
+                className="bg-gray-100 hover:bg-gray-200 rounded-full px-2 py-1 text-xs flex items-center space-x-1 transition-colors border border-gray-200"
               >
                 <span>{emoji}</span>
-                <span>{users.length}</span>
+                <span className="text-gray-600 font-medium">{users.length}</span>
               </button>
             ))}
           </div>
         )}
 
-        {/* Message actions */}
-        <div className="absolute top-0 -right-8 opacity-0 group-hover:opacity-100 transition-opacity">
-          <div className="flex items-center space-x-1">
-            {/* Quick reactions */}
+        {/* Quick reaction bar (appears on hover) */}
+        <div className={`absolute ${isOwn ? 'left-0 -ml-24' : 'right-0 -mr-24'} top-0 bg-white border border-gray-200 rounded-full shadow-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex space-x-1 z-10`}>
+          {reactionEmojis.slice(0, 4).map((emoji) => (
             <button
-              onClick={() => setShowReactions(!showReactions)}
-              className="p-1 hover:bg-gray-100 rounded-full transition-colors"
-              title="Add reaction"
+              key={emoji}
+              onClick={() => handleReaction(emoji)}
+              className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-sm"
             >
-              <span className="text-lg">😊</span>
+              {emoji}
             </button>
-            
-            {/* Menu */}
-            <button
-              onClick={() => setShowMenu(!showMenu)}
-              className="p-1 hover:bg-gray-100 rounded-full transition-colors"
-            >
-              <MoreHorizontal className="h-4 w-4 text-gray-500" />
-            </button>
-          </div>
+          ))}
+          
+          {/* More options button */}
+          <button
+            onClick={() => setShowOptions(!showOptions)}
+            className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
+          >
+            <MoreVertical className="w-3 h-3 text-gray-500" />
+          </button>
+        </div>
 
-          {/* Quick reactions panel */}
-          {showReactions && (
-            <div className="absolute top-8 right-0 bg-white border border-gray-200 rounded-lg shadow-lg p-2 z-10">
-              <div className="flex space-x-1">
-                {quickReactions.map((emoji) => (
+        {/* Options dropdown */}
+        {showOptions && (
+          <div 
+            ref={optionsRef}
+            className={`absolute top-8 ${isOwn ? 'left-0' : 'right-0'} bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20 min-w-[140px]`}
+          >
+            {/* All reaction emojis */}
+            <div className="px-3 py-2 border-b border-gray-100">
+              <div className="flex flex-wrap gap-1">
+                {reactionEmojis.map((emoji) => (
                   <button
                     key={emoji}
-                    onClick={() => handleReactionClick(emoji)}
-                    className="p-2 hover:bg-gray-100 rounded transition-colors"
-                    title={`React with ${emoji}`}
+                    onClick={() => handleReaction(emoji)}
+                    className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
                   >
-                    <span className="text-lg">{emoji}</span>
+                    {emoji}
                   </button>
                 ))}
               </div>
             </div>
-          )}
-
-          {/* Action menu */}
-          {showMenu && (
-            <div className="absolute top-8 right-0 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-10 min-w-[120px]">
+            
+            <button
+              onClick={() => onReply?.(message)}
+              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center space-x-2"
+            >
+              <Reply className="w-4 h-4" />
+              <span>Reply</span>
+            </button>
+            <button
+              onClick={copyMessage}
+              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center space-x-2"
+            >
+              <Copy className="w-4 h-4" />
+              <span>Copy text</span>
+            </button>
+            {isOwn && (
               <button
-                onClick={replyToMessage}
-                className="flex items-center space-x-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                onClick={() => {
+                  onDelete?.(message.id);
+                  setShowOptions(false);
+                }}
+                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 text-red-600 flex items-center space-x-2"
               >
-                <Reply className="h-4 w-4" />
-                <span>Reply</span>
+                <Trash2 className="w-4 h-4" />
+                <span>Delete</span>
               </button>
-              <button
-                onClick={copyMessage}
-                className="flex items-center space-x-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-              >
-                <Copy className="h-4 w-4" />
-                <span>Copy</span>
-              </button>
-              {isOwn && (
-                <button
-                  onClick={deleteMessage}
-                  className="flex items-center space-x-2 w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  <span>Delete</span>
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Timestamp */}
-      <div className={`text-xs text-gray-500 mt-1 ${isOwn ? 'text-right' : 'text-left'}`}>
-        {formatDistanceToNow(timestamp, { addSuffix: true })}
-        {message.status && isOwn && (
-          <span className="ml-2">
-            {message.status === 'sent' && '✓'}
-            {message.status === 'delivered' && '✓✓'}
-            {message.status === 'read' && '✓✓'}
-          </span>
+            )}
+          </div>
         )}
       </div>
     </div>
