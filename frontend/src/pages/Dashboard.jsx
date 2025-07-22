@@ -16,7 +16,7 @@ const Dashboard = () => {
     const loadDashboardData = async () => {
       try {
         // Load online users
-        const onlineResult = await ChatAPI.getOnlineUsers();
+        const onlineResult = await ChatAPI.getOnlineUsersInRoom('general');
         if (onlineResult.success) {
           setOnlineUsers(onlineResult.data.online_users || []);
         }

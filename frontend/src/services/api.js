@@ -158,14 +158,27 @@ export class ChatAPI {
   }
 
   // User presence
-  static async getOnlineUsers() {
+  static async getOnlineUsers(roomId = null) {
     try {
-      const response = await api.get('/online-users');
+      const params = roomId ? `?room=${roomId}` : '';
+      const response = await api.get(`/online-users${params}`);
       return { success: true, data: response.data };
     } catch (error) {
       return { 
         success: false, 
         error: error.response?.data?.error || 'Failed to get online users' 
+      };
+    }
+  }
+
+  static async getOnlineUsersInRoom(roomId) {
+    try {
+      const response = await api.get(`/online-users?room=${roomId}`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error.response?.data?.error || 'Failed to get online users in room' 
       };
     }
   }
@@ -185,30 +198,54 @@ export class ChatAPI {
   // User search and management
   static async searchUsers(query) {
     try {
-      // TODO: Replace with actual API endpoint when implemented
-      // const response = await api.get(`/users/search?q=${encodeURIComponent(query)}`);
-      
-      // Mock implementation for now
-      const mockUsers = [
-        { id: 'user1', username: 'john_doe', email: 'john@example.com', avatar: '👤', isOnline: true },
-        { id: 'user2', username: 'jane_smith', email: 'jane@example.com', avatar: '👤', isOnline: false },
-        { id: 'user3', username: 'mike_wilson', email: 'mike@example.com', avatar: '👤', isOnline: true },
-        { id: 'user4', username: 'sarah_jones', email: 'sarah@example.com', avatar: '👤', isOnline: false },
-        { id: 'user5', username: 'david_brown', email: 'david@example.com', avatar: '👤', isOnline: true },
-      ];
-
-      const filtered = mockUsers.filter(user => 
-        user.username.toLowerCase().includes(query.toLowerCase()) ||
-        user.email.toLowerCase().includes(query.toLowerCase())
-      );
-
-      return { success: true, data: { users: filtered } };
+      // Real API call to backend
+      const response = await api.get(`/users/search?q=${encodeURIComponent(query)}`);
+      return {
+        success: true,
+        data: response.data.data
+      };
     } catch (error) {
+      console.error('Error searching users:', error);
       return { 
         success: false, 
         error: error.response?.data?.error || 'Failed to search users' 
       };
     }
+  }
+
+  // Get all users for discovery
+  static async getAllUsers() {
+    try {
+      const response = await api.get('/users');
+      return {
+        success: true,
+        data: response.data.data
+      };
+    } catch (error) {
+      console.error('Error getting users:', error);
+      return {
+        success: false,
+        error: error.response?.data?.error || 'Failed to get users'
+      };
+    }
+  }
+
+  // Create room ID for private chat between two users
+  static createPrivateRoomId(userId1, userId2) {
+    // Validate user IDs
+    if (!userId1 || !userId2) {
+      console.error('Invalid user IDs provided to createPrivateRoomId:', { userId1, userId2 });
+      return null;
+    }
+    
+    // Create a consistent room ID by sorting user IDs
+    const sortedIds = [userId1, userId2].sort((a, b) => a - b);
+    return `private_${sortedIds[0]}_${sortedIds[1]}`;
+  }
+
+  // Create room ID for group chat
+  static createGroupRoomId(groupName) {
+    return `group_${groupName.toLowerCase().replace(/\s+/g, '_')}`;
   }
 
   static async getUserProfile(userId) {

@@ -38,6 +38,12 @@ const ChatContainer = ({ selectedRoom, onBackToList }) => {
     stopTyping
   } = useWebSocket(selectedRoom);
 
+  // Debug: Log props and user (after WebSocket hook)
+  console.log('ChatContainer - Selected Room:', selectedRoom);
+  console.log('ChatContainer - User:', user);
+  console.log('ChatContainer - WebSocket connected:', isConnected);
+  console.log('ChatContainer - Connection error:', connectionError);
+
   // Load chat history when room changes
   useEffect(() => {
     const loadChatHistory = async () => {

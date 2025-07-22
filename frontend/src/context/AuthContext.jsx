@@ -24,7 +24,8 @@ export const AuthProvider = ({ children }) => {
       const userData = authUtils.getUser();
       
       if (token && userData && !authUtils.isTokenExpired(token)) {
-        setUser(userData);
+        // Add token to user data for WebSocket connections
+        setUser({ ...userData, token });
         setIsAuthenticated(true);
       } else {
         // Clean up invalid/expired data without redirecting
@@ -51,7 +52,9 @@ export const AuthProvider = ({ children }) => {
         const tokenData = authUtils.parseToken(token);
         const userData = {
           id: tokenData.user_id || tokenData.sub,
+          username: tokenData.username,
           email: credentials.email,
+          token: token, // Add token to user object for WebSocket connection
           // Add other user fields as needed
         };
         

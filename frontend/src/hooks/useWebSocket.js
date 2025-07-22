@@ -22,7 +22,11 @@ const useWebSocket = (roomId) => {
 
   const connect = useCallback(() => {
     if (!roomId || !user?.token) {
-      console.log('Missing roomId or token for WebSocket connection');
+      console.log('WebSocket connection skipped - Missing roomId or token:', { 
+        roomId, 
+        hasToken: !!user?.token,
+        user: user 
+      });
       return;
     }
 
@@ -33,7 +37,7 @@ const useWebSocket = (roomId) => {
       }
 
       const wsUrl = `ws://localhost:8080/ws?room=${roomId}&token=${user.token}`;
-      console.log('Connecting to WebSocket:', wsUrl);
+      console.log('Attempting WebSocket connection:', { wsUrl, roomId, userId: user.id });
       
       ws.current = new WebSocket(wsUrl);
 

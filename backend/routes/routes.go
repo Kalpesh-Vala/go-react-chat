@@ -3,6 +3,7 @@ package routes
 import (
 	"database/sql"
 	"go-react-chat/kalpesh-vala/github.com/controllers"
+	"go-react-chat/kalpesh-vala/github.com/internal/middleware"
 	ws "go-react-chat/kalpesh-vala/github.com/internal/websocket"
 
 	"github.com/gin-gonic/gin"
@@ -19,6 +20,10 @@ func SetUpRoutes(r *gin.Engine, db *sql.DB) {
 	//Auth routes
 	r.POST("/register", controllers.Register(db))
 	r.POST("/login", controllers.Login(db))
+
+	// User routes (protected)
+	r.GET("/users/search", middleware.AuthMiddleware(), controllers.SearchUsers(db))
+	r.GET("/users", middleware.AuthMiddleware(), controllers.GetAllUsers(db))
 
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(200, gin.H{"messege": "pong"})

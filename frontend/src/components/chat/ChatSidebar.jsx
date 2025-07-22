@@ -11,11 +11,15 @@ const ChatSidebar = ({ selectedRoom, onRoomSelect, onCreateRoom, className = '' 
   const [isSearching, setIsSearching] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState([]);
 
+  // Debug: Log user data
+  console.log('ChatSidebar - User:', user);
+
   // Initialize chat list with AI Agent
   useEffect(() => {
     setChatList([
       {
         id: 'ai-agent',
+        roomId: 'ai-agent',
         username: 'AI Agent',
         email: 'ai@chatapp.com',
         avatar: '🤖',
@@ -23,7 +27,8 @@ const ChatSidebar = ({ selectedRoom, onRoomSelect, onCreateRoom, className = '' 
         lastMessageTime: Date.now() / 1000,
         unreadCount: 0,
         isOnline: true,
-        isAI: true
+        isAI: true,
+        isPrivate: false
       }
     ]);
   }, []);
@@ -32,7 +37,8 @@ const ChatSidebar = ({ selectedRoom, onRoomSelect, onCreateRoom, className = '' 
   useEffect(() => {
     const loadOnlineUsers = async () => {
       try {
-        const result = await ChatAPI.getOnlineUsers();
+        // Use general room for user discovery
+        const result = await ChatAPI.getOnlineUsersInRoom('general');
         if (result.success) {
           setOnlineUsers(result.data.online_users || []);
         }
@@ -87,32 +93,49 @@ const ChatSidebar = ({ selectedRoom, onRoomSelect, onCreateRoom, className = '' 
     return date.toLocaleDateString();
   };
 
-  const handleUserSelect = (user) => {
-    // Create or join room with selected user
-    const roomId = user.isAI ? 'ai-agent' : `user_${user.id}`;
+  const handleUserSelect = (selectedUser) => {
+    // Ensure we have the current user
+    if (!user?.id) {
+      console.error('Current user not available');
+      return;
+    }
+
+    // Create private room ID between current user and selected user
+    const roomId = ChatAPI.createPrivateRoomId(user.id, selectedUser.id);
     
+    if (!roomId) {
+      console.error('Failed to create room ID');
+      return;
+    }
+
     // Add to chat list if not already there
     setChatList(prev => {
-      const exists = prev.find(chat => chat.id === user.id);
+      const exists = prev.find(chat => chat.roomId === roomId);
       if (!exists) {
-        return [{
-          ...user,
+        const newChat = {
+          id: selectedUser.id,
+          roomId: roomId,
+          username: selectedUser.username,
+          email: selectedUser.email,
+          avatar: selectedUser.avatar || '👤',
           lastMessage: '',
           lastMessageTime: Date.now() / 1000,
-          unreadCount: 0
-        }, ...prev];
+          unreadCount: 0,
+          isPrivate: true,
+          isAI: false,
+          isOnline: selectedUser.isOnline || false
+        };
+        return [newChat, ...prev];
       }
       return prev;
     });
 
+    // Immediately select this room to start the conversation
     onRoomSelect(roomId);
     setSearchTerm('');
     setSearchResults([]);
-  };
-
-  const handleChatSelect = (chat) => {
-    const roomId = chat.isAI ? 'ai-agent' : `user_${chat.id}`;
-    onRoomSelect(roomId);
+  };  const handleChatSelect = (chat) => {
+    onRoomSelect(chat.roomId);
   };
 
   return (
@@ -204,16 +227,16 @@ const ChatSidebar = ({ selectedRoom, onRoomSelect, onCreateRoom, className = '' 
           <div>
             {chatList.length > 0 ? (
               <div className="space-y-1">
-                {chatList.map((chat) => (
-                  <button
-                    key={chat.id}
-                    onClick={() => handleChatSelect(chat)}
-                    className={`w-full flex items-center space-x-3 p-4 hover:bg-gray-50 transition-colors text-left ${
-                      selectedRoom === (chat.isAI ? 'ai-agent' : `user_${chat.id}`) 
-                        ? 'bg-blue-50 border-r-2 border-blue-500' 
-                        : ''
-                    }`}
-                  >
+                  {chatList.map((chat) => (
+                    <button
+                      key={chat.roomId}
+                      onClick={() => handleChatSelect(chat)}
+                      className={`w-full flex items-center space-x-3 p-4 hover:bg-gray-50 transition-colors text-left ${
+                        selectedRoom === chat.roomId 
+                          ? 'bg-blue-50 border-r-2 border-blue-500' 
+                          : ''
+                      }`}
+                    >
                     <div className="relative">
                       <div className="w-12 h-12 bg-gradient-to-r from-blue-400 to-purple-500 rounded-full flex items-center justify-center text-white font-semibold">
                         {chat.avatar || chat.username?.charAt(0).toUpperCase()}
@@ -257,7 +280,7 @@ const ChatSidebar = ({ selectedRoom, onRoomSelect, onCreateRoom, className = '' 
                   Search for people to start chatting with them
                 </p>
                 <button
-                  onClick={() => setSearchTerm('john')}
+                  onClick={() => document.querySelector('input[placeholder="Search people..."]').focus()}
                   className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
                 >
                   Find people
@@ -279,4 +302,21 @@ const ChatSidebar = ({ selectedRoom, onRoomSelect, onCreateRoom, className = '' 
   );
 };
 
-export default ChatSidebar;
+// Add error boundary wrapper
+const ChatSidebarWithErrorBoundary = (props) => {
+  try {
+    return <ChatSidebar {...props} />;
+  } catch (error) {
+    console.error('ChatSidebar error:', error);
+    return (
+      <div className="flex flex-col h-full bg-white border-r border-gray-200 p-4">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Chats</h2>
+        <div className="text-red-500">
+          Error loading chat sidebar. Please refresh the page.
+        </div>
+      </div>
+    );
+  }
+};
+
+export default ChatSidebarWithErrorBoundary;
