@@ -97,13 +97,6 @@ const Chat = () => {
 
   return (
     <div className="flex h-screen bg-gray-100">
-      {/* Debug Info */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="fixed top-0 left-0 bg-red-100 p-2 text-xs z-50">
-          User: {user?.username || 'None'} | Room: {selectedRoom || 'None'}
-        </div>
-      )}
-      
       {/* Sidebar */}
       <div className={`${
         showSidebar ? 'block' : 'hidden'

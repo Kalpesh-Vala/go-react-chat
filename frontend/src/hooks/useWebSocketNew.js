@@ -133,8 +133,14 @@ const useWebSocket = (roomId) => {
               break;
 
             case 'error':
-              console.error('WebSocket error:', data.error);
-              setConnectionError(data.error);
+              // Filter out less critical errors to reduce noise
+              if (data.error !== 'Empty message') {
+                console.error('WebSocket error:', data.error);
+                setConnectionError(data.error);
+              } else {
+                // Just log empty message errors at debug level
+                console.debug('Skipped empty message:', data.error);
+              }
               break;
 
             case 'pong':
