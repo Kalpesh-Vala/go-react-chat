@@ -109,6 +109,13 @@ export class ChatAPI {
 
   static async getChatHistory(roomId) {
     try {
+      // Special case for 'all' - get all conversations
+      if (roomId === 'all') {
+        const response = await api.get('/conversations');
+        return { success: true, data: response.data };
+      }
+      
+      // Regular case - get messages for a specific room
       const response = await api.get(`/messages?room_id=${roomId}`);
       return { success: true, data: response.data };
     } catch (error) {

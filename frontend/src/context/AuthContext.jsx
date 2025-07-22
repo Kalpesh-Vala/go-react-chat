@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { authUtils } from '../utils/auth';
 import { ChatAPI } from '../services/api';
+import { ChatHistoryManager } from '../utils/chatHistory';
 
 const AuthContext = createContext();
 
@@ -94,6 +95,12 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
+    // We're not clearing chat data on logout anymore
+    // This ensures chat history remains when the user logs back in
+    // if (user?.id) {
+    //   ChatHistoryManager.clearChatData(user.id);
+    // }
+    
     authUtils.logout();
     setUser(null);
     setIsAuthenticated(false);

@@ -21,18 +21,9 @@ const Dashboard = () => {
           setOnlineUsers(onlineResult.data.online_users || []);
         }
 
-        // Load recent chats (mock data for now)
-        setRecentChats([
-          {
-            id: 'ai-agent',
-            username: 'AI Agent',
-            avatar: '🤖',
-            lastMessage: 'Hello! I\'m here to help you with anything.',
-            lastMessageTime: Date.now() / 1000,
-            unreadCount: 0,
-            isOnline: true
-          }
-        ]);
+        // Initialize with empty recent chats array
+        // We'll populate this with real user chats from the API
+        setRecentChats([]);
       } catch (error) {
         console.error('Error loading dashboard data:', error);
       }
@@ -53,8 +44,8 @@ const Dashboard = () => {
     setIsMobileMenuOpen(false);
   };
 
-  const startChatWithAI = () => {
-    navigate('/chat/ai-agent');
+  const startNewChat = () => {
+    navigate('/chat');
   };
 
   const goToChat = () => {
@@ -189,27 +180,27 @@ const Dashboard = () => {
           {/* Quick Start */}
           <div className="lg:col-span-2 space-y-6">
             {/* AI Agent Card */}
-            <div className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg shadow-lg p-6 text-white">
-              <div className="flex items-center space-x-4 mb-4">
-                <div className="w-16 h-16 bg-white bg-opacity-20 rounded-full flex items-center justify-center text-2xl">
-                  🤖
+                          <div className="flex-1 bg-gradient-to-r from-blue-600 to-blue-800 rounded-lg shadow p-6 text-white">
+                <div className="flex items-center space-x-3 mb-4">
+                  <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center">
+                    <span className="text-3xl">💬</span>
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-semibold">Start Chatting</h2>
+                    <p className="text-blue-100">Connect with friends and colleagues</p>
+                  </div>
                 </div>
-                <div>
-                  <h2 className="text-2xl font-bold">AI Agent</h2>
-                  <p className="text-blue-100">Your intelligent chat companion</p>
-                </div>
+                <p className="text-blue-100 mb-6">
+                  Begin a new conversation or continue your existing chats with people in your network.
+                </p>
+                <button
+                  onClick={startNewChat}
+                  className="bg-white text-blue-600 px-6 py-3 rounded-lg font-semibold hover:bg-blue-50 transition-colors flex items-center space-x-2"
+                >
+                  <MessageCircle className="w-5 h-5" />
+                  <span>Start New Chat</span>
+                </button>
               </div>
-              <p className="text-blue-100 mb-6">
-                Get instant help, ask questions, or just have a conversation with our AI-powered chatbot.
-              </p>
-              <button
-                onClick={startChatWithAI}
-                className="bg-white text-blue-600 px-6 py-3 rounded-lg font-semibold hover:bg-blue-50 transition-colors flex items-center space-x-2"
-              >
-                <MessageCircle className="w-5 h-5" />
-                <span>Start Chat with AI</span>
-              </button>
-            </div>
 
             {/* Recent Chats */}
             <div className="bg-white rounded-lg shadow p-6">

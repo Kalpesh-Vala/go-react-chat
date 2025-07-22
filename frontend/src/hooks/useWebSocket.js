@@ -8,6 +8,7 @@ const useWebSocket = (roomId) => {
   const [connectionError, setConnectionError] = useState(null);
   const [typingUsers, setTypingUsers] = useState(new Set());
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  const [processedMessageIds, setProcessedMessageIds] = useState(new Set());
   
   const ws = useRef(null);
   const pingInterval = useRef(null);
@@ -20,24 +21,57 @@ const useWebSocket = (roomId) => {
   const reconnectDelay = 1000; // Start with 1 second
   const typingDelay = 3000; // Stop typing after 3 seconds
 
+  // Store current room ID to detect changes
+  const currentRoomRef = useRef(roomId);
+  
   const connect = useCallback(() => {
+    // Skip connection if no room or token
     if (!roomId || !user?.token) {
       console.log('WebSocket connection skipped - Missing roomId or token:', { 
         roomId, 
         hasToken: !!user?.token,
-        user: user 
       });
       return;
     }
-
+    
+    // Check if room has changed
+    const roomChanged = currentRoomRef.current !== roomId;
+    currentRoomRef.current = roomId;
+    
     try {
-      // Clean up existing connection
+      // Clean up existing connection if room changed or connection is closed
+      const needsNewConnection = 
+        roomChanged || 
+        !ws.current || 
+        ws.current.readyState === WebSocket.CLOSED || 
+        ws.current.readyState === WebSocket.CLOSING;
+      
+      // If we don't need a new connection and have a valid one, just keep it
+      if (!needsNewConnection && 
+          ws.current && 
+          (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING)) {
+        console.log('Using existing WebSocket connection for room:', roomId);
+        return;
+      }
+      
+      console.log('Creating new WebSocket connection for room:', roomId);
+      
+      // Clean up existing connection before creating a new one
       if (ws.current) {
-        ws.current.close();
+        console.log('Closing existing WebSocket connection');
+        ws.current.onclose = null; // Prevent reconnect attempts from old connection
+        ws.current.close(1000, 'Switching rooms');
+        ws.current = null;
+      }
+      
+      // Clear any existing intervals
+      if (pingInterval.current) {
+        clearInterval(pingInterval.current);
+        pingInterval.current = null;
       }
 
       const wsUrl = `ws://localhost:8080/ws?room=${roomId}&token=${user.token}`;
-      console.log('Attempting WebSocket connection:', { wsUrl, roomId, userId: user.id });
+      console.log('Attempting WebSocket connection:', { roomId, userId: user.id });
       
       ws.current = new WebSocket(wsUrl);
 
@@ -46,13 +80,13 @@ const useWebSocket = (roomId) => {
         setIsConnected(true);
         setConnectionError(null);
         setReconnectAttempts(0);
-
+        
         // Setup ping interval to keep connection alive
         pingInterval.current = setInterval(() => {
           if (ws.current?.readyState === WebSocket.OPEN) {
             ws.current.send(JSON.stringify({ type: 'ping' }));
           }
-        }, 30000); // Ping every 30 seconds
+        }, 45000); // Increased ping interval to reduce traffic
       };
 
       ws.current.onmessage = (event) => {
@@ -62,16 +96,31 @@ const useWebSocket = (roomId) => {
 
           switch (data.type) {
             case 'message':
+              const messageId = data.message_id || data.id;
+              
+              // Skip if we've already processed this message
+              if (processedMessageIds.has(messageId)) {
+                console.log('Skipping duplicate message:', messageId);
+                break;
+              }
+
+              setProcessedMessageIds(prev => new Set(prev).add(messageId));
               setMessages(prev => {
-                // Avoid duplicates
+                // Double-check for duplicates in the current messages array
                 const exists = prev.some(msg => 
-                  msg.id === data.message_id || msg.message_id === data.message_id
+                  (msg.id === messageId) || 
+                  (msg.message_id === messageId) ||
+                  (msg.content === data.content && msg.sender_id === data.sender_id && Math.abs((msg.timestamp || 0) - (data.timestamp || Date.now() / 1000)) < 1)
                 );
-                if (exists) return prev;
                 
-                return [...prev, {
-                  id: data.message_id,
-                  message_id: data.message_id,
+                if (exists) {
+                  console.log('Message already exists in array:', messageId);
+                  return prev;
+                }
+                
+                const newMessage = {
+                  id: messageId,
+                  message_id: messageId,
                   room_id: data.room_id,
                   sender_id: data.sender_id,
                   content: data.content,
@@ -82,7 +131,10 @@ const useWebSocket = (roomId) => {
                   attachment_url: data.attachment_url || '',
                   attachment_type: data.attachment_type || '',
                   reactions: data.reactions || {}
-                }];
+                };
+                
+                console.log('Adding new message:', newMessage);
+                return [...prev, newMessage];
               });
               break;
 
@@ -160,7 +212,7 @@ const useWebSocket = (roomId) => {
       };
 
       ws.current.onclose = (event) => {
-        console.log('WebSocket closed:', event.code, event.reason);
+        console.log(`WebSocket closed for room ${roomId}:`, event.code, event.reason);
         setIsConnected(false);
         
         // Clear ping interval
@@ -169,14 +221,34 @@ const useWebSocket = (roomId) => {
           pingInterval.current = null;
         }
 
-        // Attempt to reconnect if not intentionally closed
-        if (event.code !== 1000 && reconnectAttempts < maxReconnectAttempts) {
+        // Check if this is the current room's WebSocket
+        if (roomId !== currentRoomRef.current) {
+          console.log('WebSocket closed for previous room, skipping reconnection');
+          return;
+        }
+
+        // Only attempt to reconnect if:
+        // 1. Not intentionally closed (code !== 1000)
+        // 2. Under max reconnect attempts
+        // 3. This is still the current room
+        if (event.code !== 1000 && 
+            reconnectAttempts < maxReconnectAttempts &&
+            roomId === currentRoomRef.current) {
+          
           const delay = reconnectDelay * Math.pow(2, reconnectAttempts); // Exponential backoff
-          console.log(`Attempting to reconnect in ${delay}ms (attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`);
+          console.log(`Attempting to reconnect to room ${roomId} in ${delay}ms (attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`);
+          
+          // Clear any existing reconnect timeout
+          if (reconnectTimeout.current) {
+            clearTimeout(reconnectTimeout.current);
+          }
           
           reconnectTimeout.current = setTimeout(() => {
-            setReconnectAttempts(prev => prev + 1);
-            connect();
+            // Double check that the room hasn't changed
+            if (roomId === currentRoomRef.current) {
+              setReconnectAttempts(prev => prev + 1);
+              connect();
+            }
           }, delay);
         } else if (reconnectAttempts >= maxReconnectAttempts) {
           setConnectionError('Failed to reconnect after multiple attempts');
@@ -187,36 +259,75 @@ const useWebSocket = (roomId) => {
       console.error('Error creating WebSocket connection:', error);
       setConnectionError('Failed to create connection');
     }
-  }, [roomId, user?.token, reconnectAttempts]);
+  }, [roomId, user?.token]); // Removed reconnectAttempts to avoid endless reconnection loops
 
   // Connect when component mounts or roomId/token changes
   useEffect(() => {
+    // Track if the room ID actually changed (not just a rerender)
+    const roomChanged = currentRoomRef.current !== roomId;
+    
+    // Only connect if we have the required data
     if (roomId && user?.token) {
-      connect();
+      if (roomChanged) {
+        console.log(`Room changed to ${roomId}, initializing new WebSocket connection`);
+        
+        // Clean up existing WebSocket before creating a new one
+        if (ws.current) {
+          console.log(`Closing previous WebSocket for room ${currentRoomRef.current}`);
+          ws.current.onclose = null; // Prevent reconnection attempts
+          ws.current.close(1000, 'Switching rooms');
+          ws.current = null;
+        }
+        
+        // Reset all connection-related state
+        setIsConnected(false);
+        setConnectionError(null);
+        setReconnectAttempts(0);
+        setMessages([]);
+        setTypingUsers(new Set());
+        setProcessedMessageIds(new Set());
+      }
+      
+      // Short delay before connecting to ensure clean transition
+      const connectionTimer = setTimeout(() => {
+        connect();
+      }, roomChanged ? 50 : 0);
+      
+      return () => {
+        clearTimeout(connectionTimer);
+      };
     }
 
+    // Cleanup function for when component unmounts or roomId/token changes
     return () => {
-      // Cleanup on unmount or dependency change
+      // This cleanup runs when the component using the hook unmounts
+      // or when roomId/token changes
+      console.log(`Cleaning up WebSocket resources for room: ${roomId}`);
+      
+      // Close the WebSocket connection
       if (ws.current) {
-        ws.current.close(1000, 'Component unmounting');
+        ws.current.onclose = null; // Prevent reconnection attempts
+        ws.current.close(1000, 'Component unmounting or room changing');
+        ws.current = null;
       }
+      
+      // Clear all intervals and timeouts
       if (pingInterval.current) {
         clearInterval(pingInterval.current);
+        pingInterval.current = null;
       }
       if (reconnectTimeout.current) {
         clearTimeout(reconnectTimeout.current);
+        reconnectTimeout.current = null;
       }
       if (typingTimeout.current) {
         clearTimeout(typingTimeout.current);
+        typingTimeout.current = null;
       }
     };
-  }, [connect]);
+  }, [roomId, user?.token, connect]); // Added connect back to dependencies
 
-  // Reset messages when room changes
-  useEffect(() => {
-    setMessages([]);
-    setTypingUsers(new Set());
-  }, [roomId]);
+  // No need for a separate reset effect, as we handle this in the main useEffect now
 
   const sendMessage = useCallback((messageData) => {
     if (ws.current?.readyState === WebSocket.OPEN) {

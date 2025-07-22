@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { ChatAPI } from '../../services/api';
+import { ChatHistoryManager } from '../../utils/chatHistory';
 import useWebSocket from '../../hooks/useWebSocket';
 import { 
   Send, 
@@ -26,7 +27,10 @@ const ChatContainer = ({ selectedRoom, onBackToList }) => {
   const [chatPartner, setChatPartner] = useState(null);
   const messageListRef = useRef(null);
 
-  // WebSocket connection
+  // Store previous room to detect changes
+  const previousRoomRef = useRef(selectedRoom);
+  
+  // WebSocket connection - Only create when we have a valid room
   const {
     messages: realtimeMessages,
     isConnected,
@@ -37,6 +41,14 @@ const ChatContainer = ({ selectedRoom, onBackToList }) => {
     startTyping,
     stopTyping
   } = useWebSocket(selectedRoom);
+  
+  // Log room changes
+  useEffect(() => {
+    if (previousRoomRef.current !== selectedRoom) {
+      console.log(`Room changed from ${previousRoomRef.current} to ${selectedRoom}`);
+      previousRoomRef.current = selectedRoom;
+    }
+  }, [selectedRoom]);
 
   // Debug: Log props and user (after WebSocket hook)
   console.log('ChatContainer - Selected Room:', selectedRoom);
@@ -47,45 +59,127 @@ const ChatContainer = ({ selectedRoom, onBackToList }) => {
   // Load chat history when room changes
   useEffect(() => {
     const loadChatHistory = async () => {
-      if (!selectedRoom) return;
+      if (!selectedRoom || !user?.id) return;
       
       setIsLoadingHistory(true);
+      setChatHistory([]); // Clear previous history
+      
       try {
+        // First, load from localStorage for instant display
+        const cachedMessages = ChatHistoryManager.loadChatMessages(selectedRoom, user.id);
+        if (cachedMessages.length > 0) {
+          setChatHistory(cachedMessages);
+        }
+
+        // Then, fetch from API for latest messages
         const result = await ChatAPI.getChatHistory(selectedRoom);
         if (result.success) {
-          setChatHistory(result.data.messages || []);
+          const apiMessages = result.data.messages || [];
+          setChatHistory(apiMessages);
+          
+          // Save to localStorage for next time
+          ChatHistoryManager.saveChatMessages(selectedRoom, apiMessages, user.id);
         }
       } catch (error) {
         console.error('Error loading chat history:', error);
+        // Fallback to cached messages if API fails
+        const cachedMessages = ChatHistoryManager.loadChatMessages(selectedRoom, user.id);
+        setChatHistory(cachedMessages);
       } finally {
         setIsLoadingHistory(false);
       }
     };
 
     loadChatHistory();
-  }, [selectedRoom]);
+  }, [selectedRoom, user?.id]);
 
   // Set chat partner based on room ID
   useEffect(() => {
-    if (selectedRoom === 'ai-agent') {
-      setChatPartner({
-        id: 'ai-agent',
-        username: 'AI Agent',
-        email: 'ai@chatapp.com',
-        isOnline: true,
-        avatar: '🤖'
-      });
-    } else {
-      // For user chats, extract user info from room ID or load from API
+    const fetchChatPartnerInfo = async () => {
+      if (!selectedRoom || !user?.id) return;
+      
+      // First set temporary chat partner to show something immediately
       setChatPartner({
         id: selectedRoom,
-        username: selectedRoom,
-        email: `${selectedRoom}@example.com`,
+        username: 'Loading...',
+        email: '',
         isOnline: false,
         avatar: '👤'
       });
-    }
-  }, [selectedRoom]);
+      
+      try {
+        // Try to get partner info from API
+        if (selectedRoom.includes('private_')) {
+          // Extract user IDs from private room format (private_userid1_userid2)
+          const userIds = selectedRoom.replace('private_', '').split('_');
+          // Find the other user's ID (not the current user)
+          const partnerId = userIds.find(id => id !== user.id?.toString());
+          
+          if (partnerId) {
+            // Fetch user profile from API
+            const result = await ChatAPI.getUserProfile(partnerId);
+            if (result.success) {
+              setChatPartner({
+                id: partnerId,
+                username: result.data.username || 'User',
+                email: result.data.email || '',
+                isOnline: result.data.is_online || false,
+                avatar: result.data.avatar || '👤'
+              });
+              return;
+            }
+          }
+        } else if (selectedRoom.includes('group_')) {
+          // Handle group chat rooms
+          const groupName = selectedRoom.replace('group_', '').replace(/_/g, ' ');
+          setChatPartner({
+            id: selectedRoom,
+            username: groupName,
+            email: '',
+            isOnline: true,
+            isGroup: true,
+            avatar: '👥'
+          });
+          return;
+        }
+        
+        // Fallback if API call fails or for unknown room types
+        const savedChats = ChatHistoryManager.loadChatList(user.id);
+        const chatInfo = savedChats.find(chat => chat.roomId === selectedRoom);
+        
+        if (chatInfo) {
+          setChatPartner({
+            id: chatInfo.id,
+            username: chatInfo.username,
+            email: chatInfo.email || '',
+            isOnline: chatInfo.isOnline || false,
+            avatar: chatInfo.avatar || '👤'
+          });
+        } else {
+          // Ultimate fallback - just use room ID
+          setChatPartner({
+            id: selectedRoom,
+            username: selectedRoom.replace('private_', 'Chat ').replace('group_', 'Group '),
+            email: '',
+            isOnline: false,
+            avatar: '👤'
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching chat partner info:', error);
+        // Fallback on error
+        setChatPartner({
+          id: selectedRoom,
+          username: selectedRoom,
+          email: '',
+          isOnline: false,
+          avatar: '👤'
+        });
+      }
+    };
+    
+    fetchChatPartnerInfo();
+  }, [selectedRoom, user?.id]);
 
   // Merge chat history with real-time messages
   const allMessages = React.useMemo(() => {
@@ -117,13 +211,10 @@ const ChatContainer = ({ selectedRoom, onBackToList }) => {
     );
   }, [chatHistory, realtimeMessages, user?.id]);
 
-  const handleSendMessage = async (content, attachmentUrl = '', attachmentType = '') => {
+  const handleSendMessage = useCallback(async (content, attachmentUrl = '', attachmentType = '') => {
     if (!content.trim() && !attachmentUrl) return;
 
     const messageData = {
-      type: 'message',
-      room_id: selectedRoom,
-      sender_id: user?.id,
       content: content.trim(),
       is_group: false,
       attachment_url: attachmentUrl,
@@ -132,22 +223,24 @@ const ChatContainer = ({ selectedRoom, onBackToList }) => {
 
     try {
       // Send via WebSocket for real-time delivery
-      sendMessage(messageData);
-      
-      // Also send via REST API for reliability
-      await ChatAPI.sendMessage({
-        room_id: selectedRoom,
-        sender_id: user?.id,
-        message: content.trim(),
-        is_group: false,
-        status: 'sent',
-        attachment_url: attachmentUrl,
-        attachment_type: attachmentType
-      });
+      if (isConnected) {
+        sendMessage(messageData);
+      } else {
+        // Fallback to REST API if WebSocket is not connected
+        await ChatAPI.sendMessage({
+          room_id: selectedRoom,
+          sender_id: user?.id,
+          message: content.trim(),
+          is_group: false,
+          status: 'sent',
+          attachment_url: attachmentUrl,
+          attachment_type: attachmentType
+        });
+      }
     } catch (error) {
       console.error('Error sending message:', error);
     }
-  };
+  }, [selectedRoom, user?.id, isConnected, sendMessage]);
 
   const handleReaction = async (messageId, emoji, action = 'add') => {
     try {

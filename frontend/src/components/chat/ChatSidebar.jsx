@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Search, Plus, MessageCircle, Users, Settings } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { ChatAPI } from '../../services/api';
+import { ChatHistoryManager } from '../../utils/chatHistory';
 
 const ChatSidebar = ({ selectedRoom, onRoomSelect, onCreateRoom, className = '' }) => {
   const { user } = useAuth();
@@ -10,36 +11,85 @@ const ChatSidebar = ({ selectedRoom, onRoomSelect, onCreateRoom, className = '' 
   const [chatList, setChatList] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState([]);
+  const [isLoadingChats, setIsLoadingChats] = useState(true);
 
   // Debug: Log user data
   console.log('ChatSidebar - User:', user);
 
-  // Initialize chat list with AI Agent
+  // Initialize chat list and load saved chats
   useEffect(() => {
-    setChatList([
-      {
-        id: 'ai-agent',
-        roomId: 'ai-agent',
-        username: 'AI Agent',
-        email: 'ai@chatapp.com',
-        avatar: '🤖',
-        lastMessage: 'Hello! I\'m here to help you with anything.',
-        lastMessageTime: Date.now() / 1000,
-        unreadCount: 0,
-        isOnline: true,
-        isAI: true,
-        isPrivate: false
-      }
-    ]);
-  }, []);
+    const initializeChatList = async () => {
+      if (!user?.id) return;
+      
+      setIsLoadingChats(true);
+      
+      try {
+        // First, try to load from localStorage for instant display
+        const savedChats = ChatHistoryManager.loadChatList(user.id);
+        if (savedChats && savedChats.length > 0) {
+          // Filter out AI Agent if it exists
+          const filteredChats = savedChats.filter(chat => chat.id !== 'ai-agent');
+          setChatList(filteredChats);
+        } else {
+          // If no saved chats, show empty list
+          setChatList([]);
+        }
 
-  // Load online users
+        // Then try to fetch past conversations from server
+        const pastConversations = await ChatAPI.getChatHistory('all');
+        if (pastConversations.success && pastConversations.data.conversations) {
+          // Process conversations from API
+          const apiChats = pastConversations.data.conversations.map(conv => ({
+            id: conv.partner_id || conv.room_id,
+            roomId: conv.room_id,
+            username: conv.partner_name || conv.room_name || 'Chat',
+            email: conv.partner_email || '',
+            avatar: conv.avatar || '👤',
+            lastMessage: conv.last_message || '',
+            lastMessageTime: conv.last_message_time || Date.now() / 1000,
+            unreadCount: conv.unread_count || 0,
+            isPrivate: !conv.is_group,
+            isAI: false,
+            isOnline: false
+          }));
+          
+          // Update state and save to localStorage
+          setChatList(apiChats);
+          ChatHistoryManager.saveChatList(apiChats, user.id);
+        }
+      } catch (error) {
+        console.error('Error initializing chat list:', error);
+      } finally {
+        setIsLoadingChats(false);
+      }
+    };
+
+    initializeChatList();
+  }, [user?.id]);
+
+  // Load online users with smarter throttling
   useEffect(() => {
+    let isActive = true;
+    let lastCheck = 0;
+    const CHECK_INTERVAL = 60000; // 60 seconds - increased to reduce API load
+    const MIN_INTERVAL_BETWEEN_CALLS = 30000; // 30 seconds minimum between calls
+    
     const loadOnlineUsers = async () => {
       try {
-        // Use general room for user discovery
-        const result = await ChatAPI.getOnlineUsersInRoom('general');
-        if (result.success) {
+        // Only make API calls if component is still mounted and enough time has passed
+        const now = Date.now();
+        if (!isActive || (now - lastCheck < MIN_INTERVAL_BETWEEN_CALLS)) {
+          return;
+        }
+        
+        lastCheck = now;
+        
+        // Check if we have a selected room to avoid unnecessary general room requests
+        const roomParam = selectedRoom || 'general';
+        
+        // Use the specific room or general room for user discovery
+        const result = await ChatAPI.getOnlineUsersInRoom(roomParam);
+        if (result.success && isActive) {
           setOnlineUsers(result.data.online_users || []);
         }
       } catch (error) {
@@ -47,40 +97,51 @@ const ChatSidebar = ({ selectedRoom, onRoomSelect, onCreateRoom, className = '' 
       }
     };
 
-    loadOnlineUsers();
-    const interval = setInterval(loadOnlineUsers, 30000);
-    return () => clearInterval(interval);
+    // First load - with a slight delay to prevent immediate API call
+    const initialTimer = setTimeout(loadOnlineUsers, 1000);
+    
+    // Set up interval for subsequent checks - with a more reasonable frequency
+    const interval = setInterval(loadOnlineUsers, CHECK_INTERVAL);
+    
+    // Cleanup function
+    return () => {
+      isActive = false;
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+    };
+  }, [selectedRoom]);
+
+  // Search users - Fix infinite loop with useCallback
+  const searchUsers = useCallback(async (searchTerm) => {
+    if (!searchTerm.trim()) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const result = await ChatAPI.searchUsers(searchTerm);
+      if (result.success) {
+        setSearchResults(result.data.users || []);
+      } else {
+        console.error('Search error:', result.error);
+        setSearchResults([]);
+      }
+    } catch (error) {
+      console.error('Error searching users:', error);
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
   }, []);
 
-  // Search users
   useEffect(() => {
-    const searchUsers = async () => {
-      if (!searchTerm.trim()) {
-        setSearchResults([]);
-        setIsSearching(false);
-        return;
-      }
-
-      setIsSearching(true);
-      try {
-        const result = await ChatAPI.searchUsers(searchTerm);
-        if (result.success) {
-          setSearchResults(result.data.users || []);
-        } else {
-          console.error('Search error:', result.error);
-          setSearchResults([]);
-        }
-      } catch (error) {
-        console.error('Error searching users:', error);
-        setSearchResults([]);
-      } finally {
-        setIsSearching(false);
-      }
-    };
-
-    const debounceTimer = setTimeout(searchUsers, 300);
+    const debounceTimer = setTimeout(() => {
+      searchUsers(searchTerm);
+    }, 300);
     return () => clearTimeout(debounceTimer);
-  }, [searchTerm]);
+  }, [searchTerm, searchUsers]);
 
   const formatLastMessageTime = (timestamp) => {
     const date = new Date(timestamp * 1000);
@@ -125,7 +186,11 @@ const ChatSidebar = ({ selectedRoom, onRoomSelect, onCreateRoom, className = '' 
           isAI: false,
           isOnline: selectedUser.isOnline || false
         };
-        return [newChat, ...prev];
+        const updatedList = [newChat, ...prev];
+        
+        // Save to localStorage
+        ChatHistoryManager.saveChatList(updatedList, user.id);
+        return updatedList;
       }
       return prev;
     });
@@ -225,7 +290,12 @@ const ChatSidebar = ({ selectedRoom, onRoomSelect, onCreateRoom, className = '' 
         ) : (
           /* Chat List */
           <div>
-            {chatList.length > 0 ? (
+            {isLoadingChats ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                <span className="ml-2 text-sm text-gray-500">Loading conversations...</span>
+              </div>
+            ) : chatList.length > 0 ? (
               <div className="space-y-1">
                   {chatList.map((chat) => (
                     <button
