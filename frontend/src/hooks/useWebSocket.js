@@ -188,6 +188,17 @@ const useWebSocket = (roomId) => {
               );
               break;
 
+            case 'deletion':
+              setMessages(prev => 
+                prev.map(msg => {
+                  if (msg.id === data.message_id || msg.message_id === data.message_id) {
+                    return { ...msg, deleted: true };
+                  }
+                  return msg;
+                })
+              );
+              break;
+
             case 'error':
               // Filter out less critical errors to reduce noise
               if (data.error !== 'Empty message') {

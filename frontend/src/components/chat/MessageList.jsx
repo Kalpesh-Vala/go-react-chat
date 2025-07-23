@@ -1,7 +1,7 @@
 import React, { forwardRef, useEffect, useRef } from 'react';
 import MessageBubble from './MessageBubble';
 
-const MessageList = forwardRef(({ messages, currentUserId, onReaction }, ref) => {
+const MessageList = forwardRef(({ messages, currentUserId, onReaction, onDelete }, ref) => {
   const scrollContainerRef = useRef(null);
   const lastMessageRef = useRef(null);
 
@@ -100,6 +100,7 @@ const MessageList = forwardRef(({ messages, currentUserId, onReaction }, ref) =>
                     message={message}
                     isOwn={message.sender_id === currentUserId}
                     onReaction={onReaction}
+                    onDelete={onDelete}
                   />
                 </div>
               );

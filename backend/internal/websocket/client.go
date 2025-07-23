@@ -67,6 +67,17 @@ func (c *Client) ReadPump() {
 			}
 			continue
 
+		case "deletion":
+			// Handle message deletion - broadcast the deletion event
+			if broadcastBytes, err := json.Marshal(payload); err == nil {
+				broadcastPayload := MessagePayload{
+					RoomID:  payload.RoomID,
+					Message: broadcastBytes,
+				}
+				c.Hub.Broadcast <- broadcastPayload
+			}
+			continue
+
 		case "message":
 			// Handle actual chat messages
 			// Check if message has an ID already (might be a forwarded message from REST API)

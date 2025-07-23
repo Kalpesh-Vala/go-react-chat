@@ -317,6 +317,38 @@ const ChatContainer = ({ selectedRoom, onBackToList }) => {
     }
   };
 
+  const handleDelete = async (messageId) => {
+    try {
+      // Call the API to delete the message
+      const response = await ChatAPI.deleteMessage(messageId);
+      
+      if (response.success) {
+        console.log("Message deleted successfully:", messageId);
+        
+        // Send a WebSocket notification about the deletion
+        if (isConnected) {
+          sendMessage({
+            type: "deletion",
+            message_id: messageId,
+            room_id: selectedRoom,
+            sender_id: user?.id,
+          });
+        }
+        
+        // Update the local messages state to reflect deletion
+        setChatHistory(prevHistory => 
+          prevHistory.map(msg => 
+            msg.id === messageId ? {...msg, deleted: true} : msg
+          )
+        );
+      } else {
+        console.error("Failed to delete message:", response.error);
+      }
+    } catch (error) {
+      console.error("Error deleting message:", error);
+    }
+  };
+
   if (!selectedRoom) {
     return (
       <div className="flex-1 flex items-center justify-center bg-gray-50">
@@ -371,6 +403,7 @@ const ChatContainer = ({ selectedRoom, onBackToList }) => {
             messages={allMessages}
             currentUserId={user?.id}
             onReaction={handleReaction}
+            onDelete={handleDelete}
           />
         )}
 
