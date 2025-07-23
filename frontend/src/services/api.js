@@ -152,9 +152,13 @@ export class ChatAPI {
   }
 
   // Message management
-  static async deleteMessage(messageId) {
+  static async deleteMessage(messageId, roomId = null) {
     try {
-      const response = await api.post('/message/delete', { message_id: messageId });
+      const requestBody = { message_id: messageId };
+      if (roomId) {
+        requestBody.room_id = roomId;
+      }
+      const response = await api.post('/message/delete', requestBody);
       return { success: true, data: response.data };
     } catch (error) {
       return { 

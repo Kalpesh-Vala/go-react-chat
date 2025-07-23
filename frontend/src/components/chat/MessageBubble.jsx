@@ -50,12 +50,15 @@ const MessageBubble = ({ message, isOwn, onReaction, onReply, onDelete }) => {
           } shadow-sm`}
         >
           {/* Message content */}
-          {message.deleted ? (
-            <p className={`text-sm italic ${
+          {message.deleted || message.isDeleted ? (
+            <div className={`flex items-center space-x-2 text-sm italic ${
               isOwn ? 'text-blue-300' : 'text-gray-500'
             }`}>
-              {isOwn ? "You deleted this message" : "This message was deleted"}
-            </p>
+              <Trash2 className="w-4 h-4 flex-shrink-0" />
+              <p>
+                {isOwn ? "You deleted this message" : "This message was deleted"}
+              </p>
+            </div>
           ) : (
             <p className="text-sm whitespace-pre-wrap break-words">
               {message.content || message.message}
@@ -63,7 +66,7 @@ const MessageBubble = ({ message, isOwn, onReaction, onReply, onDelete }) => {
           )}
 
           {/* Attachment */}
-          {!message.deleted && message.attachment_url && (
+          {!(message.deleted || message.isDeleted) && message.attachment_url && (
             <div className="mt-2">
               {message.attachment_type?.startsWith('image') ? (
                 <img 
@@ -106,7 +109,7 @@ const MessageBubble = ({ message, isOwn, onReaction, onReply, onDelete }) => {
         </div>
 
         {/* Reactions */}
-        {!message.deleted && message.reactions && Object.keys(message.reactions).length > 0 && (
+        {!(message.deleted || message.isDeleted) && message.reactions && Object.keys(message.reactions).length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1 px-1">
             {Object.entries(message.reactions).map(([emoji, users]) => (
               <button
@@ -127,7 +130,7 @@ const MessageBubble = ({ message, isOwn, onReaction, onReply, onDelete }) => {
         )}
 
         {/* Quick reaction bar (appears on hover) - only shown for non-deleted messages */}
-        {!message.deleted && (
+        {!(message.deleted || message.isDeleted) && (
           <div className={`absolute ${isOwn ? 'left-0 -ml-24' : 'right-0 -mr-24'} top-0 bg-white border border-gray-200 rounded-full shadow-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex space-x-1 z-10`}>
           {reactionEmojis.slice(0, 4).map((emoji) => (
             <button
@@ -150,7 +153,7 @@ const MessageBubble = ({ message, isOwn, onReaction, onReply, onDelete }) => {
         )}
 
         {/* Options dropdown */}
-        {showOptions && !message.deleted && (
+        {showOptions && !(message.deleted || message.isDeleted) && (
           <div 
             ref={optionsRef}
             className={`absolute top-8 ${isOwn ? 'left-0' : 'right-0'} bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20 min-w-[140px]`}

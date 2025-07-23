@@ -22,10 +22,9 @@ func InsertMessage(ctx context.Context, msg *models.Message) error {
 func GetMessagesByRoomID(ctx context.Context, roomID string) ([]models.Message, error) {
 	collection := mongodb.ChatDB.Collection("messages")
 
-	// Filter: get messages for room_id that are not deleted, sorted by timestamp
+	// Filter: get all messages for room_id, including deleted ones
 	filter := bson.M{
 		"room_id": roomID,
-		"deleted": bson.M{"$ne": true}, // Exclude deleted messages
 	}
 
 	// Sort by timestamp (oldest first)
@@ -79,6 +78,17 @@ func DeleteMessage(ctx context.Context, messageID primitive.ObjectID) error {
 	update := bson.M{"$set": bson.M{"deleted": true}}
 	_, err := collection.UpdateOne(ctx, filter, update)
 	return err
+}
+
+// GetMessageByID retrieves a single message by its ID
+func GetMessageByID(ctx context.Context, messageID primitive.ObjectID) (*models.Message, error) {
+	collection := mongodb.ChatDB.Collection("messages")
+	var message models.Message
+	err := collection.FindOne(ctx, bson.M{"_id": messageID}).Decode(&message)
+	if err != nil {
+		return nil, err
+	}
+	return &message, nil
 }
 
 // AddReaction adds a reaction (emoji) from a user to a message

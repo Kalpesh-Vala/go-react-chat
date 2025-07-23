@@ -75,6 +75,8 @@ const ChatContainer = ({ selectedRoom, onBackToList }) => {
         const result = await ChatAPI.getChatHistory(selectedRoom);
         if (result.success) {
           const apiMessages = result.data.messages || [];
+          console.log('API Messages loaded:', apiMessages.length, 'messages');
+          console.log('Deleted messages in API response:', apiMessages.filter(msg => msg.deleted).length);
           setChatHistory(apiMessages);
           
           // Save to localStorage for next time
@@ -189,6 +191,7 @@ const ChatContainer = ({ selectedRoom, onBackToList }) => {
       content: msg.message || msg.content,
       sender_id: msg.sender_id,
       timestamp: msg.timestamp,
+      deleted: msg.deleted || false, // Ensure deleted property is preserved
       isOwn: msg.sender_id === user?.id
     }));
 
@@ -196,6 +199,7 @@ const ChatContainer = ({ selectedRoom, onBackToList }) => {
       ...msg,
       id: msg.id || msg.message_id,
       content: msg.content || msg.message,
+      deleted: msg.deleted || false, // Ensure deleted property is preserved
       isOwn: msg.sender_id === user?.id
     }));
 
@@ -206,9 +210,17 @@ const ChatContainer = ({ selectedRoom, onBackToList }) => {
     );
 
     // Sort by timestamp
-    return uniqueMessages.sort((a, b) => 
+    const sortedMessages = uniqueMessages.sort((a, b) => 
       (a.timestamp || 0) - (b.timestamp || 0)
     );
+    
+    // Debug: Log deleted messages count
+    const deletedCount = sortedMessages.filter(msg => msg.deleted).length;
+    if (deletedCount > 0) {
+      console.log(`Rendering ${deletedCount} deleted messages out of ${sortedMessages.length} total`);
+    }
+    
+    return sortedMessages;
   }, [chatHistory, realtimeMessages, user?.id]);
 
   const handleSendMessage = useCallback(async (content, attachmentUrl = '', attachmentType = '') => {
@@ -319,23 +331,14 @@ const ChatContainer = ({ selectedRoom, onBackToList }) => {
 
   const handleDelete = async (messageId) => {
     try {
-      // Call the API to delete the message
-      const response = await ChatAPI.deleteMessage(messageId);
+      // Call the API to delete the message with room_id
+      const response = await ChatAPI.deleteMessage(messageId, selectedRoom);
       
       if (response.success) {
         console.log("Message deleted successfully:", messageId);
         
-        // Send a WebSocket notification about the deletion
-        if (isConnected) {
-          sendMessage({
-            type: "deletion",
-            message_id: messageId,
-            room_id: selectedRoom,
-            sender_id: user?.id,
-          });
-        }
-        
-        // Update the local messages state to reflect deletion
+        // The WebSocket broadcast will be sent by the backend automatically
+        // Update the local messages state to reflect deletion immediately for better UX
         setChatHistory(prevHistory => 
           prevHistory.map(msg => 
             msg.id === messageId ? {...msg, deleted: true} : msg

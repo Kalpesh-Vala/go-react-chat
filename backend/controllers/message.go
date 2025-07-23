@@ -203,6 +203,7 @@ func RemoveReactionHandler(c *gin.Context) {
 func DeleteMessageHandler(c *gin.Context) {
 	var req struct {
 		MessageID string `json:"message_id"`
+		RoomID    string `json:"room_id,omitempty"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
@@ -213,11 +214,42 @@ func DeleteMessageHandler(c *gin.Context) {
 		c.JSON(400, gin.H{"error": "Invalid message ID"})
 		return
 	}
+
+	// Get the message first to extract room information
+	message, err := services.GetMessageByID(c, msgID)
+	if err != nil {
+		c.JSON(404, gin.H{"error": "Message not found"})
+		return
+	}
+
 	if err := services.DeleteMessage(c, msgID); err != nil {
 		c.JSON(500, gin.H{"error": "Failed to delete message"})
 		return
 	}
-	c.JSON(200, gin.H{"status": "Message deleted"})
+
+	// Broadcast deletion event via WebSocket if hub is available
+	if globalHub != nil {
+		deletionEvent := map[string]interface{}{
+			"type":       "deletion",
+			"message_id": req.MessageID,
+			"room_id":    message.RoomID,
+			"sender_id":  message.SenderID,
+		}
+
+		if deletionBytes, err := json.Marshal(deletionEvent); err == nil {
+			broadcastPayload := ws.MessagePayload{
+				RoomID:  message.RoomID,
+				Message: deletionBytes,
+			}
+			globalHub.Broadcast <- broadcastPayload
+		}
+	}
+
+	c.JSON(200, gin.H{
+		"status":     "Message deleted",
+		"message_id": req.MessageID,
+		"room_id":    message.RoomID,
+	})
 }
 
 // GetAllMessages - Debug function to see all messages in database
