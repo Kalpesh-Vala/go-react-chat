@@ -183,7 +183,57 @@ const ChatContainer = ({ selectedRoom, onBackToList }) => {
     fetchChatPartnerInfo();
   }, [selectedRoom, user?.id]);
 
-  // Merge chat history with real-time messages
+  // Sync chatHistory with realtime messages to capture reactions, deletions, etc.
+  useEffect(() => {
+    if (realtimeMessages.length > 0) {
+      setChatHistory(prevHistory => {
+        // Create a map of current history messages by ID for efficient lookups
+        const historyMap = new Map();
+        prevHistory.forEach(msg => {
+          const msgId = msg.id || msg.message_id;
+          historyMap.set(msgId, msg);
+        });
+
+        // Process realtime messages to update history
+        realtimeMessages.forEach(realtimeMsg => {
+          const msgId = realtimeMsg.id || realtimeMsg.message_id;
+          const existingMsg = historyMap.get(msgId);
+          
+          if (existingMsg) {
+            // Update existing message with realtime data (reactions, deletions, etc.)
+            const updatedMsg = {
+              ...existingMsg,
+              ...realtimeMsg,
+              id: msgId,
+              content: realtimeMsg.content || existingMsg.content || existingMsg.message,
+              reactions: realtimeMsg.reactions || existingMsg.reactions || {},
+              deleted: realtimeMsg.deleted !== undefined ? realtimeMsg.deleted : existingMsg.deleted
+            };
+            historyMap.set(msgId, updatedMsg);
+          } else {
+            // Add new message
+            const newMsg = {
+              ...realtimeMsg,
+              id: msgId,
+              content: realtimeMsg.content || realtimeMsg.message,
+              reactions: realtimeMsg.reactions || {},
+              deleted: realtimeMsg.deleted || false
+            };
+            historyMap.set(msgId, newMsg);
+          }
+        });
+
+        // Convert back to array and sort
+        const updatedMessages = Array.from(historyMap.values()).sort((a, b) => 
+          (a.timestamp || 0) - (b.timestamp || 0)
+        );
+
+        return updatedMessages;
+      });
+    }
+  }, [realtimeMessages]);
+
+  // Merge chat history with real-time messages for display
   const allMessages = React.useMemo(() => {
     const historyMessages = chatHistory.map(msg => ({
       ...msg,
@@ -195,22 +245,8 @@ const ChatContainer = ({ selectedRoom, onBackToList }) => {
       isOwn: msg.sender_id === user?.id
     }));
 
-    const realtimeMessagesMapped = realtimeMessages.map(msg => ({
-      ...msg,
-      id: msg.id || msg.message_id,
-      content: msg.content || msg.message,
-      deleted: msg.deleted || false, // Ensure deleted property is preserved
-      isOwn: msg.sender_id === user?.id
-    }));
-
-    // Combine and deduplicate
-    const combined = [...historyMessages, ...realtimeMessagesMapped];
-    const uniqueMessages = combined.filter((msg, index, self) => 
-      index === self.findIndex(m => m.id === msg.id)
-    );
-
     // Sort by timestamp
-    const sortedMessages = uniqueMessages.sort((a, b) => 
+    const sortedMessages = historyMessages.sort((a, b) => 
       (a.timestamp || 0) - (b.timestamp || 0)
     );
     
@@ -221,7 +257,7 @@ const ChatContainer = ({ selectedRoom, onBackToList }) => {
     }
     
     return sortedMessages;
-  }, [chatHistory, realtimeMessages, user?.id]);
+  }, [chatHistory, user?.id]);
 
   const handleSendMessage = useCallback(async (content, attachmentUrl = '', attachmentType = '') => {
     if (!content.trim() && !attachmentUrl) return;
@@ -294,86 +330,120 @@ const ChatContainer = ({ selectedRoom, onBackToList }) => {
   }, [selectedRoom, user?.id, isConnected, sendMessage]);
 
   const handleReaction = async (messageId, emoji, action = 'add') => {
-    try {
-      // Immediately update local state for better UX
-      setChatHistory(prevHistory => 
-        prevHistory.map(msg => {
+    if (action === 'add') {
+      // For adding reactions, we'll let the backend handle the single-reaction logic
+      // Optimistically update local state by removing any existing reaction from current user
+      // and adding the new one
+      setChatHistory(prevHistory => {
+        const updatedHistory = prevHistory.map(msg => {
           if (msg.id === messageId) {
             const reactions = { ...msg.reactions };
+            const currentUserId = user?.id.toString();
             
-            if (action === 'add') {
-              if (!reactions[emoji]) {
-                reactions[emoji] = [];
-              }
-              if (!reactions[emoji].includes(user?.id.toString())) {
-                reactions[emoji].push(user?.id.toString());
-              }
-            } else if (action === 'remove') {
-              if (reactions[emoji]) {
-                reactions[emoji] = reactions[emoji].filter(
-                  uid => uid !== user?.id.toString()
+            // Remove user from any existing reactions
+            Object.keys(reactions).forEach(existingEmoji => {
+              if (reactions[existingEmoji]) {
+                reactions[existingEmoji] = reactions[existingEmoji].filter(
+                  uid => uid !== currentUserId
                 );
-                if (reactions[emoji].length === 0) {
-                  delete reactions[emoji];
+                // Remove the emoji completely if no users left
+                if (reactions[existingEmoji].length === 0) {
+                  delete reactions[existingEmoji];
                 }
               }
+            });
+            
+            // Add user to the new emoji
+            if (!reactions[emoji]) {
+              reactions[emoji] = [];
+            }
+            if (!reactions[emoji].includes(currentUserId)) {
+              reactions[emoji].push(currentUserId);
             }
             
             return { ...msg, reactions };
           }
           return msg;
-        })
-      );
+        });
+        return updatedHistory;
+      });
 
-      const reactionData = {
-        message_id: messageId,
-        emoji,
-        user_id: user?.id.toString()
-      };
+      try {
+        const reactionData = {
+          message_id: messageId,
+          emoji,
+          user_id: user?.id.toString()
+        };
 
-      // Send to API for database persistence
-      if (action === 'add') {
+        // Use add endpoint - backend will handle removing previous reaction
         await ChatAPI.addReaction(reactionData);
-      } else {
-        await ChatAPI.removeReaction(reactionData);
+        
+      } catch (error) {
+        console.error('Error adding reaction:', error);
+        
+        // Revert local state on error - this is complex with single reaction logic
+        // For now, we'll let the next WebSocket update correct the state
       }
-
-      // The API handlers will automatically broadcast via WebSocket to other users
-      // No need to call sendReaction here as it's handled by the backend
       
-    } catch (error) {
-      console.error('Error handling reaction:', error);
-      
-      // Revert local state on error
-      setChatHistory(prevHistory => 
-        prevHistory.map(msg => {
+    } else if (action === 'remove') {
+      // For removing reactions
+      setChatHistory(prevHistory => {
+        const updatedHistory = prevHistory.map(msg => {
           if (msg.id === messageId) {
             const reactions = { ...msg.reactions };
+            const currentUserId = user?.id.toString();
             
-            // Revert the action
-            if (action === 'add') {
-              if (reactions[emoji]) {
-                reactions[emoji] = reactions[emoji].filter(
-                  uid => uid !== user?.id.toString()
-                );
-                if (reactions[emoji].length === 0) {
-                  delete reactions[emoji];
-                }
-              }
-            } else if (action === 'remove') {
-              if (!reactions[emoji]) {
-                reactions[emoji] = [];
-              }
-              if (!reactions[emoji].includes(user?.id.toString())) {
-                reactions[emoji].push(user?.id.toString());
+            if (reactions[emoji]) {
+              reactions[emoji] = reactions[emoji].filter(
+                uid => uid !== currentUserId
+              );
+              // Remove the emoji completely if no users left
+              if (reactions[emoji].length === 0) {
+                delete reactions[emoji];
               }
             }
             
             return { ...msg, reactions };
           }
           return msg;
-        })
-      );
+        });
+        return updatedHistory;
+      });
+
+      try {
+        const reactionData = {
+          message_id: messageId,
+          emoji,
+          user_id: user?.id.toString()
+        };
+
+        await ChatAPI.removeReaction(reactionData);
+        
+      } catch (error) {
+        console.error('Error removing reaction:', error);
+        
+        // Revert local state on error
+        setChatHistory(prevHistory => {
+          const revertedHistory = prevHistory.map(msg => {
+            if (msg.id === messageId) {
+              const reactions = { ...msg.reactions };
+              const currentUserId = user?.id.toString();
+              
+              // Re-add the reaction
+              if (!reactions[emoji]) {
+                reactions[emoji] = [];
+              }
+              if (!reactions[emoji].includes(currentUserId)) {
+                reactions[emoji].push(currentUserId);
+              }
+              
+              return { ...msg, reactions };
+            }
+            return msg;
+          });
+          return revertedHistory;
+        });
+      }
     }
   };
 
@@ -460,7 +530,7 @@ const ChatContainer = ({ selectedRoom, onBackToList }) => {
           <MessageList
             ref={messageListRef}
             messages={allMessages}
-            currentUserId={user?.id}
+            currentUserId={user?.id?.toString()}
             onReaction={handleReaction}
             onDelete={handleDelete}
           />

@@ -155,29 +155,55 @@ func AddReactionHandler(c *gin.Context) {
 		return
 	}
 
-	if err := services.AddReaction(c, msgID, req.Emoji, req.UserID); err != nil {
-		c.JSON(500, gin.H{"error": "Failed to add reaction"})
+	// Set user's reaction (one per user per message) and get previous reaction if any
+	previousEmoji, err := services.SetUserReaction(c, msgID, req.Emoji, req.UserID)
+	if err != nil {
+		c.JSON(500, gin.H{"error": "Failed to set reaction"})
 		return
 	}
 
-	// Broadcast reaction update via WebSocket if hub is available
+	// Broadcast reaction updates via WebSocket if hub is available
 	if globalHub != nil {
 		userID, _ := strconv.Atoi(req.UserID) // Convert string to int
-		reactionEvent := map[string]interface{}{
-			"type":       "reaction",
-			"message_id": req.MessageID,
-			"room_id":    message.RoomID,
-			"user_id":    userID,
-			"emoji":      req.Emoji,
-			"action":     "add",
+
+		// If user had a previous reaction, broadcast its removal first
+		if previousEmoji != "" && previousEmoji != req.Emoji {
+			removeEvent := map[string]interface{}{
+				"type":       "reaction",
+				"message_id": req.MessageID,
+				"room_id":    message.RoomID,
+				"user_id":    userID,
+				"emoji":      previousEmoji,
+				"action":     "remove",
+			}
+
+			if removeBytes, err := json.Marshal(removeEvent); err == nil {
+				broadcastPayload := ws.MessagePayload{
+					RoomID:  message.RoomID,
+					Message: removeBytes,
+				}
+				globalHub.Broadcast <- broadcastPayload
+			}
 		}
 
-		if reactionBytes, err := json.Marshal(reactionEvent); err == nil {
-			broadcastPayload := ws.MessagePayload{
-				RoomID:  message.RoomID,
-				Message: reactionBytes,
+		// Broadcast the new reaction (only if it's different from previous)
+		if previousEmoji != req.Emoji {
+			addEvent := map[string]interface{}{
+				"type":       "reaction",
+				"message_id": req.MessageID,
+				"room_id":    message.RoomID,
+				"user_id":    userID,
+				"emoji":      req.Emoji,
+				"action":     "add",
 			}
-			globalHub.Broadcast <- broadcastPayload
+
+			if addBytes, err := json.Marshal(addEvent); err == nil {
+				broadcastPayload := ws.MessagePayload{
+					RoomID:  message.RoomID,
+					Message: addBytes,
+				}
+				globalHub.Broadcast <- broadcastPayload
+			}
 		}
 	}
 

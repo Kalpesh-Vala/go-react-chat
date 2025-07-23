@@ -108,11 +108,91 @@ func AddReaction(ctx context.Context, messageID primitive.ObjectID, emoji, userI
 func RemoveReaction(ctx context.Context, messageID primitive.ObjectID, emoji, userID string) error {
 	collection := mongodb.ChatDB.Collection("messages")
 	filter := bson.M{"_id": messageID}
+
+	// First remove the user from the emoji array
 	update := bson.M{
 		"$pull": bson.M{
 			"reactions." + emoji: userID, // Removes userID from the emoji array
 		},
 	}
 	_, err := collection.UpdateOne(ctx, filter, update)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Then remove the emoji field if the array is empty
+	// This prevents showing reactions with 0 count
+	cleanupUpdate := bson.M{
+		"$unset": bson.M{
+			"reactions." + emoji: "",
+		},
+	}
+	cleanupFilter := bson.M{
+		"_id":                messageID,
+		"reactions." + emoji: bson.M{"$size": 0}, // Only if array is empty
+	}
+
+	// This update will only execute if the emoji array is empty
+	collection.UpdateOne(ctx, cleanupFilter, cleanupUpdate)
+
+	return nil
+}
+
+// SetUserReaction sets a user's reaction to a message (one reaction per user per message)
+// Returns the previous emoji (if any) and the new emoji for proper WebSocket broadcasting
+func SetUserReaction(ctx context.Context, messageID primitive.ObjectID, newEmoji, userID string) (string, error) {
+	collection := mongodb.ChatDB.Collection("messages")
+
+	// First, get the current message to find any existing reaction from this user
+	var message models.Message
+	err := collection.FindOne(ctx, bson.M{"_id": messageID}).Decode(&message)
+	if err != nil {
+		return "", err
+	}
+
+	var previousEmoji string
+
+	// Find and remove any existing reaction from this user
+	if message.Reactions != nil {
+		for emoji, users := range message.Reactions {
+			for _, uid := range users {
+				if uid == userID {
+					previousEmoji = emoji
+					// Remove user from this emoji's array
+					_, err := collection.UpdateOne(ctx,
+						bson.M{"_id": messageID},
+						bson.M{"$pull": bson.M{"reactions." + emoji: userID}},
+					)
+					if err != nil {
+						return "", err
+					}
+
+					// Clean up empty emoji arrays to prevent showing 0 counts
+					cleanupFilter := bson.M{
+						"_id":                messageID,
+						"reactions." + emoji: bson.M{"$size": 0},
+					}
+					cleanupUpdate := bson.M{
+						"$unset": bson.M{"reactions." + emoji: ""},
+					}
+					collection.UpdateOne(ctx, cleanupFilter, cleanupUpdate)
+					break
+				}
+			}
+			if previousEmoji != "" {
+				break
+			}
+		}
+	}
+
+	// Add the new reaction
+	_, err = collection.UpdateOne(ctx,
+		bson.M{"_id": messageID},
+		bson.M{"$addToSet": bson.M{"reactions." + newEmoji: userID}},
+	)
+	if err != nil {
+		return "", err
+	}
+
+	return previousEmoji, nil
 }

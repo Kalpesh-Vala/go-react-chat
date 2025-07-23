@@ -98,7 +98,8 @@ const MessageList = forwardRef(({ messages, currentUserId, onReaction, onDelete 
                 >
                   <MessageBubble
                     message={message}
-                    isOwn={message.sender_id === currentUserId}
+                    isOwn={message.sender_id?.toString() === currentUserId}
+                    currentUserId={currentUserId}
                     onReaction={onReaction}
                     onDelete={onDelete}
                   />

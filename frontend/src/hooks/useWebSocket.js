@@ -158,8 +158,8 @@ const useWebSocket = (roomId) => {
               break;
 
             case 'reaction':
-              setMessages(prev => 
-                prev.map(msg => {
+              setMessages(prev => {
+                const updatedMessages = prev.map(msg => {
                   if (msg.id === data.message_id || msg.message_id === data.message_id) {
                     const reactions = { ...msg.reactions };
                     
@@ -175,6 +175,7 @@ const useWebSocket = (roomId) => {
                         reactions[data.emoji] = reactions[data.emoji].filter(
                           uid => uid !== data.user_id.toString()
                         );
+                        // Remove the emoji completely if no users left
                         if (reactions[data.emoji].length === 0) {
                           delete reactions[data.emoji];
                         }
@@ -184,8 +185,9 @@ const useWebSocket = (roomId) => {
                     return { ...msg, reactions };
                   }
                   return msg;
-                })
-              );
+                });
+                return updatedMessages;
+              });
               break;
 
             case 'deletion':

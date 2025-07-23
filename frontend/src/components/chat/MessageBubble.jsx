@@ -1,7 +1,46 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MoreVertical, Reply, Copy, Trash2 } from 'lucide-react';
 
-const MessageBubble = ({ message, isOwn, onReaction, onReply, onDelete }) => {
+// CSS animations for smooth transitions
+const reactionAnimationStyles = `
+  @keyframes reactionPulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+  }
+  
+  @keyframes reactionFadeIn {
+    0% { opacity: 0; transform: scale(0.8); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+  
+  @keyframes reactionFadeOut {
+    0% { opacity: 1; transform: scale(1); }
+    100% { opacity: 0; transform: scale(0.8); }
+  }
+  
+  .reaction-pulse {
+    animation: reactionPulse 0.3s ease-in-out;
+  }
+  
+  .reaction-fade-in {
+    animation: reactionFadeIn 0.2s ease-out;
+  }
+  
+  .reaction-fade-out {
+    animation: reactionFadeOut 0.2s ease-in;
+  }
+`;
+
+// Inject styles if not already present
+if (typeof document !== 'undefined' && !document.querySelector('#reaction-animations')) {
+  const style = document.createElement('style');
+  style.id = 'reaction-animations';
+  style.textContent = reactionAnimationStyles;
+  document.head.appendChild(style);
+}
+
+const MessageBubble = ({ message, isOwn, onReaction, onReply, onDelete, currentUserId }) => {
   const [showOptions, setShowOptions] = useState(false);
   const optionsRef = useRef(null);
 
@@ -27,9 +66,24 @@ const MessageBubble = ({ message, isOwn, onReaction, onReply, onDelete }) => {
   };
 
   const handleReaction = (emoji, action = 'add') => {
-    onReaction?.(message.id, emoji, action);
-    setShowOptions(false);
+    // For single reaction per user, we always "add" the new reaction
+    // The backend will handle removing the previous one
+    onReaction?.(message.id, emoji, 'add');
   };
+
+  // Find which emoji the current user has reacted with (if any)
+  const getCurrentUserReaction = () => {
+    if (!message.reactions || !currentUserId) return null;
+    
+    for (const [emoji, users] of Object.entries(message.reactions)) {
+      if (users.includes(currentUserId.toString())) {
+        return emoji;
+      }
+    }
+    return null;
+  };
+
+  const currentUserReaction = getCurrentUserReaction();
 
   const copyMessage = () => {
     navigator.clipboard.writeText(message.content || message.message);
@@ -111,36 +165,77 @@ const MessageBubble = ({ message, isOwn, onReaction, onReply, onDelete }) => {
         {/* Reactions */}
         {!(message.deleted || message.isDeleted) && message.reactions && Object.keys(message.reactions).length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1 px-1">
-            {Object.entries(message.reactions).map(([emoji, users]) => (
-              <button
-                key={emoji}
-                onClick={() => {
-                  // Toggle reaction - if user already reacted, remove it, otherwise add it
-                  const currentUserId = 'current-user'; // Get from context
-                  const hasReacted = users.includes(currentUserId);
-                  handleReaction(emoji, hasReacted ? 'remove' : 'add');
-                }}
-                className="bg-gray-100 hover:bg-gray-200 rounded-full px-2 py-1 text-xs flex items-center space-x-1 transition-colors border border-gray-200"
-              >
-                <span>{emoji}</span>
-                <span className="text-gray-600 font-medium">{users.length}</span>
-              </button>
-            ))}
+            {Object.entries(message.reactions)
+              .filter(([emoji, users]) => users && users.length > 0) // Only show reactions with count > 0
+              .map(([emoji, users]) => {
+                const isCurrentUserReaction = currentUserReaction === emoji;
+                const count = users.length;
+                
+                return (
+                  <button
+                    key={emoji}
+                    onClick={() => {
+                      if (isCurrentUserReaction) {
+                        // Remove current user's reaction
+                        handleReaction(emoji, 'remove');
+                      } else {
+                        // Add new reaction (backend will remove previous one)
+                        handleReaction(emoji, 'add');
+                      }
+                    }}
+                    className={`
+                      rounded-full px-2 py-1 text-xs flex items-center space-x-1 
+                      transition-all duration-300 ease-in-out transform hover:scale-105
+                      border reaction-fade-in ${
+                        isCurrentUserReaction
+                          ? 'bg-blue-100 border-blue-300 text-blue-700 shadow-sm reaction-pulse'
+                          : 'bg-gray-100 hover:bg-gray-200 border-gray-200 text-gray-600'
+                      }
+                    `}
+                  >
+                    <span className="transition-transform duration-200 ease-in-out">{emoji}</span>
+                    <span className={`font-medium transition-all duration-200 ${
+                      isCurrentUserReaction ? 'text-blue-700' : 'text-gray-600'
+                    }`}>
+                      {count}
+                    </span>
+                  </button>
+              );
+            })}
           </div>
         )}
 
         {/* Quick reaction bar (appears on hover) - only shown for non-deleted messages */}
         {!(message.deleted || message.isDeleted) && (
           <div className={`absolute ${isOwn ? 'left-0 -ml-24' : 'right-0 -mr-24'} top-0 bg-white border border-gray-200 rounded-full shadow-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex space-x-1 z-10`}>
-          {reactionEmojis.slice(0, 4).map((emoji) => (
-            <button
-              key={emoji}
-              onClick={() => handleReaction(emoji)}
-              className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-sm"
-            >
-              {emoji}
-            </button>
-          ))}
+          {reactionEmojis.slice(0, 4).map((emoji) => {
+            const isSelected = currentUserReaction === emoji;
+            return (
+              <button
+                key={emoji}
+                onClick={() => {
+                  if (isSelected) {
+                    // Remove current reaction
+                    handleReaction(emoji, 'remove');
+                  } else {
+                    // Add new reaction (backend will remove previous one)
+                    handleReaction(emoji, 'add');
+                  }
+                }}
+                className={`
+                  w-6 h-6 flex items-center justify-center rounded-full 
+                  transition-all duration-150 text-sm transform hover:scale-110
+                  ${isSelected 
+                    ? 'bg-blue-100 text-blue-600 shadow-inner' 
+                    : 'hover:bg-gray-100'
+                  }
+                `}
+                title={isSelected ? `Remove ${emoji} reaction` : `React with ${emoji}`}
+              >
+                {emoji}
+              </button>
+            );
+          })}
           
           {/* More options button */}
           <button
