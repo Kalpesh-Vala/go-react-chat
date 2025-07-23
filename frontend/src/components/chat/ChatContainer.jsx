@@ -295,29 +295,85 @@ const ChatContainer = ({ selectedRoom, onBackToList }) => {
 
   const handleReaction = async (messageId, emoji, action = 'add') => {
     try {
+      // Immediately update local state for better UX
+      setChatHistory(prevHistory => 
+        prevHistory.map(msg => {
+          if (msg.id === messageId) {
+            const reactions = { ...msg.reactions };
+            
+            if (action === 'add') {
+              if (!reactions[emoji]) {
+                reactions[emoji] = [];
+              }
+              if (!reactions[emoji].includes(user?.id.toString())) {
+                reactions[emoji].push(user?.id.toString());
+              }
+            } else if (action === 'remove') {
+              if (reactions[emoji]) {
+                reactions[emoji] = reactions[emoji].filter(
+                  uid => uid !== user?.id.toString()
+                );
+                if (reactions[emoji].length === 0) {
+                  delete reactions[emoji];
+                }
+              }
+            }
+            
+            return { ...msg, reactions };
+          }
+          return msg;
+        })
+      );
+
       const reactionData = {
         message_id: messageId,
         emoji,
         user_id: user?.id.toString()
       };
 
+      // Send to API for database persistence
       if (action === 'add') {
         await ChatAPI.addReaction(reactionData);
       } else {
         await ChatAPI.removeReaction(reactionData);
       }
 
-      // Send via WebSocket for real-time updates
-      sendReaction({
-        type: 'reaction',
-        message_id: messageId,
-        room_id: selectedRoom,
-        user_id: user?.id,
-        emoji,
-        action
-      });
+      // The API handlers will automatically broadcast via WebSocket to other users
+      // No need to call sendReaction here as it's handled by the backend
+      
     } catch (error) {
       console.error('Error handling reaction:', error);
+      
+      // Revert local state on error
+      setChatHistory(prevHistory => 
+        prevHistory.map(msg => {
+          if (msg.id === messageId) {
+            const reactions = { ...msg.reactions };
+            
+            // Revert the action
+            if (action === 'add') {
+              if (reactions[emoji]) {
+                reactions[emoji] = reactions[emoji].filter(
+                  uid => uid !== user?.id.toString()
+                );
+                if (reactions[emoji].length === 0) {
+                  delete reactions[emoji];
+                }
+              }
+            } else if (action === 'remove') {
+              if (!reactions[emoji]) {
+                reactions[emoji] = [];
+              }
+              if (!reactions[emoji].includes(user?.id.toString())) {
+                reactions[emoji].push(user?.id.toString());
+              }
+            }
+            
+            return { ...msg, reactions };
+          }
+          return msg;
+        })
+      );
     }
   };
 

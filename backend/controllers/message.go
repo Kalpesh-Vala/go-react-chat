@@ -147,6 +147,14 @@ func AddReactionHandler(c *gin.Context) {
 		c.JSON(400, gin.H{"error": "Invalid message ID"})
 		return
 	}
+
+	// Get the message first to extract room information for broadcasting
+	message, err := services.GetMessageByID(c, msgID)
+	if err != nil {
+		c.JSON(404, gin.H{"error": "Message not found"})
+		return
+	}
+
 	if err := services.AddReaction(c, msgID, req.Emoji, req.UserID); err != nil {
 		c.JSON(500, gin.H{"error": "Failed to add reaction"})
 		return
@@ -155,19 +163,19 @@ func AddReactionHandler(c *gin.Context) {
 	// Broadcast reaction update via WebSocket if hub is available
 	if globalHub != nil {
 		userID, _ := strconv.Atoi(req.UserID) // Convert string to int
-		payload := ws.ReactionPayload{
-			Type:      "reaction",
-			MessageID: req.MessageID,
-			UserID:    userID,
-			Emoji:     req.Emoji,
-			Action:    "add",
+		reactionEvent := map[string]interface{}{
+			"type":       "reaction",
+			"message_id": req.MessageID,
+			"room_id":    message.RoomID,
+			"user_id":    userID,
+			"emoji":      req.Emoji,
+			"action":     "add",
 		}
 
-		if payloadBytes, err := json.Marshal(payload); err == nil {
-			// Assume room_id is needed - you might need to fetch this from the message
+		if reactionBytes, err := json.Marshal(reactionEvent); err == nil {
 			broadcastPayload := ws.MessagePayload{
-				RoomID:  "broadcast", // You may need to fetch actual room_id from message
-				Message: payloadBytes,
+				RoomID:  message.RoomID,
+				Message: reactionBytes,
 			}
 			globalHub.Broadcast <- broadcastPayload
 		}
@@ -192,10 +200,40 @@ func RemoveReactionHandler(c *gin.Context) {
 		c.JSON(400, gin.H{"error": "Invalid message ID"})
 		return
 	}
+
+	// Get the message first to extract room information for broadcasting
+	message, err := services.GetMessageByID(c, msgID)
+	if err != nil {
+		c.JSON(404, gin.H{"error": "Message not found"})
+		return
+	}
+
 	if err := services.RemoveReaction(c, msgID, req.Emoji, req.UserID); err != nil {
 		c.JSON(500, gin.H{"error": "Failed to remove reaction"})
 		return
 	}
+
+	// Broadcast reaction removal via WebSocket if hub is available
+	if globalHub != nil {
+		userID, _ := strconv.Atoi(req.UserID) // Convert string to int
+		reactionEvent := map[string]interface{}{
+			"type":       "reaction",
+			"message_id": req.MessageID,
+			"room_id":    message.RoomID,
+			"user_id":    userID,
+			"emoji":      req.Emoji,
+			"action":     "remove",
+		}
+
+		if reactionBytes, err := json.Marshal(reactionEvent); err == nil {
+			broadcastPayload := ws.MessagePayload{
+				RoomID:  message.RoomID,
+				Message: reactionBytes,
+			}
+			globalHub.Broadcast <- broadcastPayload
+		}
+	}
+
 	c.JSON(200, gin.H{"status": "Reaction removed"})
 }
 
