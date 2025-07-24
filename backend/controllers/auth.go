@@ -20,17 +20,30 @@ func Register(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var input models.User
 		if err := c.ShouldBindJSON(&input); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON", "details": err.Error()})
 			return
 		}
-		hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 
-		err := postgres.CreateUser(db, input.Username, input.Email, string(hashedPassword))
-		if err != nil {
-			c.JSON(http.StatusConflict, gin.H{"error": "Username or email already exists"})
+		// Validate required fields
+		if input.Username == "" || input.Email == "" || input.Password == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Username, email, and password are required"})
 			return
 		}
-		c.JSON(http.StatusCreated, gin.H{"message": "User registered"})
+
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+			return
+		}
+
+		err = postgres.CreateUser(db, input.Username, input.Email, string(hashedPassword))
+		if err != nil {
+			// Log the actual error for debugging
+			println("Registration error:", err.Error())
+			c.JSON(http.StatusConflict, gin.H{"error": "Username or email already exists", "details": err.Error()})
+			return
+		}
+		c.JSON(http.StatusCreated, gin.H{"message": "User registered successfully"})
 	}
 }
 

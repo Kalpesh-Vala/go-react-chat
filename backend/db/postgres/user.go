@@ -3,6 +3,7 @@ package postgres
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"go-react-chat/kalpesh-vala/github.com/models"
 	"time"
 )
@@ -10,7 +11,7 @@ import (
 func CreateUser(db *sql.DB, username, email, hashedPassword string) error {
 	tx, err := db.Begin()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer func() {
 		if p := recover(); p != nil {
@@ -27,7 +28,7 @@ func CreateUser(db *sql.DB, username, email, hashedPassword string) error {
 	checkQuery := `SELECT EXISTS(SELECT 1 FROM users WHERE username = $1 OR email = $2)`
 	err = tx.QueryRow(checkQuery, username, email).Scan(&exists)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to check if user exists: %w", err)
 	}
 	if exists {
 		return errors.New("username or email already exists")
@@ -36,7 +37,7 @@ func CreateUser(db *sql.DB, username, email, hashedPassword string) error {
 	insertQuery := `INSERT INTO users (username, email, password, created_at) VALUES ($1, $2, $3, $4)`
 	_, err = tx.Exec(insertQuery, username, email, hashedPassword, time.Now())
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to insert user: %w", err)
 	}
 	return nil
 }
