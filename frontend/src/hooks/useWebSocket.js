@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
+import config from '../config/index.js';
 
 const useWebSocket = (roomId) => {
   const { user } = useAuth();
@@ -70,7 +71,7 @@ const useWebSocket = (roomId) => {
         pingInterval.current = null;
       }
 
-      const wsUrl = `ws://localhost:8080/ws?room=${roomId}&token=${user.token}`;
+      const wsUrl = `${config.WS_BASE_URL}/ws?room=${roomId}&token=${user.token}`;
       console.log('Attempting WebSocket connection:', { roomId, userId: user.id });
       
       ws.current = new WebSocket(wsUrl);

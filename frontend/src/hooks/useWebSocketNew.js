@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
+import config from '../config/index.js';
 
 const useWebSocket = (roomId) => {
   const { user } = useAuth();
@@ -32,7 +33,7 @@ const useWebSocket = (roomId) => {
         ws.current.close();
       }
 
-      const wsUrl = `ws://localhost:8080/ws?room=${roomId}&token=${user.token}`;
+      const wsUrl = `${config.WS_BASE_URL}/ws?room=${roomId}&token=${user.token}`;
       console.log('Connecting to WebSocket:', wsUrl);
       
       ws.current = new WebSocket(wsUrl);

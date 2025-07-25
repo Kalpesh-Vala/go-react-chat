@@ -1,17 +1,16 @@
 import axios from 'axios';
 import Cookies from 'js-cookie';
-
-const BASE_URL = 'http://localhost:8080';
+import config from '../config/index.js';
 
 // Create axios instance with default config
 const api = axios.create({
-  baseURL: BASE_URL,
+  baseURL: config.API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   },
   withCredentials: false, // Set to true if you need cookies
-  timeout: 10000, // 10 second timeout
+  timeout: config.API_TIMEOUT,
 });
 
 // Add request interceptor to include JWT token
