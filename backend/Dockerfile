@@ -1,42 +1,39 @@
-# Use the official Go image as the base image
+# Stage 1: Build Go app
 FROM golang:1.24.2-alpine AS builder
 
-# Set the working directory inside the container
 WORKDIR /app
 
-# Install necessary packages
 RUN apk add --no-cache git ca-certificates tzdata
 
-# Copy go.mod and go.sum files
 COPY go.mod go.sum ./
-
-# Download dependencies
 RUN go mod download
 
-# Copy the source code
 COPY . .
-
-# Build the application
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
 
-# Use a minimal base image for the final stage
+# Add start.sh to builder stage
+COPY start.sh .
+
+# Stage 2: Final image
 FROM alpine:latest
 
-# Install ca-certificates for HTTPS requests and tzdata for timezone support
-RUN apk --no-cache add ca-certificates tzdata
+# Install Redis, certs, and timezone support
+RUN apk --no-cache add ca-certificates tzdata redis bash
 
-# Set the working directory
-WORKDIR /root/
-
-# Copy the binary from the builder stage
-COPY --from=builder /app/main .
-
-# Create a non-root user for security
+# Create non-root user
 RUN adduser -D -s /bin/sh appuser
+
+# Set workdir and copy files
+WORKDIR /home/appuser/
+COPY --from=builder /app/main .
+COPY --from=builder /app/start.sh ./start.sh
+
+# Fix permissions BEFORE switching user
+RUN chmod +x ./start.sh
+
+# Switch to non-root user
 USER appuser
 
-# Expose the port the app runs on
-EXPOSE 8080
+EXPOSE 8080 6379
 
-# Command to run the application
-CMD ["./main"]
+CMD ["./start.sh"]
